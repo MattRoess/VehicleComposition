@@ -1,0 +1,1133 @@
+---
+title: "Generate data for vehicle component family and component composition based on different data sources"
+author: "Matthias Roesslein - Empa"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+tags: [FutuRaM, Empa, vehicles, car, van, Al, Fe, Mg]
+abstract: |
+  Calculate for given data the standard composition of vehicle component and their different car segments (a, b, c etc.). It is first done for aluminium alloys (Al), iron/steel alloys (Fe)
+ 
+version: 1.5 
+fontsize: 11pt
+output:
+  pdf_document: default
+    df_print: paged
+---
+
+**Copyright notice:** Copyright © 2024 Empa, Matthias Roesslein
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code.
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*.
+
+------------------------------------------------------------------------
+
+## Loading of the libraries
+
+We are using tidyverse framework to rearrange and analysis the data.
+
+```{r, message=FALSE, warning=FALSE}
+# load libraries
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(stringr)
+library(ggplot2)
+library(scales)
+library(forcats)
+
+library(openxlsx) # test this library. It should work without Java
+library(readxl) # read excel files
+```
+
+```{r, message=FALSE, warning=FALSE}
+tidyverse_conflicts()
+```
+## Define the timeframe
+
+```{r, message=FALSE, warning=FALSE}
+
+startYear <- 1990
+endYear <- 2050
+
+startYearBEV <- 2000
+startYearHEV <- 2000
+startYearPHEV <- 2000
+startYearOther <- 2000
+
+```
+
+
+## Define the files names of the input excel file
+
+```{r, message=FALSE, warning=FALSE}
+
+filename2_input <- "Data/2_VehicleCompositionNewData.xlsx"
+filename7_input <- "Data/7_CarWeights.xlsx"
+filename23_input <- "Data/23_CompositionDataUpdated.xlsx"
+filename31_input <- "Data/31_ComponentMaterial.xlsx"
+
+```
+
+## Define the file name of the output excel file
+
+```{r, message=FALSE, warning=FALSE}
+
+filename35_output <- "Data/35_VehicleComponentData.xlsx"
+
+```
+
+## Load all the sheets of the the component family composotion (% total weigt & % material composition)
+
+```{r, message=FALSE, warning=FALSE}
+
+productKeys <- read_excel(filename2_input, sheet = "ProductKeys")
+vehicleWeight <- read_excel(filename7_input, sheet = "carWeigthFuturam")
+
+composition <- read_excel(filename23_input, sheet = "FutuRaM-ELV")
+
+componentCarRatio <- read_excel(filename31_input, sheet = "componentCarRatio")
+componentCarSegmentInput <- read_excel(filename31_input, sheet = "componentCarSegment")
+componentAluminium <- read_excel(filename31_input, sheet = "componentAluminium")
+componentSteel <- read_excel(filename31_input, sheet = "componentSteel")
+componentMagnesium <- read_excel(filename31_input, sheet = "componentMagnesium")
+
+```
+
+## Calculate the mean component ratio for the different car segments and materials
+
+```{r, message=FALSE, warning=FALSE}
+# calculate the mean 
+componentCarSegment <- componentCarSegmentInput %>% group_by(components, segment, year) %>% summarise(meanAluminium = mean(aluminium, na.rm = TRUE), meanSteel = mean(steel, na.rm = TRUE))
+componentCarSegment
+
+# Calculate the ratio of the components by segment and material
+componentCarSegment <- componentCarSegment %>% left_join(componentAluminium, by = c("components")) %>% mutate(Al_5xxx = Al_5xxx * meanAluminium, Al_6xxx = Al_6xxx * meanAluminium,
+                                                                                                                          Al_7xxx = Al_7xxx * meanAluminium, castAluminiumAlSiCu = castAluminiumAlSiCu * meanAluminium,
+                                                                                                                          castAluminiumAlSiMg = castAluminiumAlSiMg * meanAluminium) %>% select(-meanAluminium)
+componentCarSegment
+
+# Calculate the ratio of the components by segment and material
+componentCarSegment <- componentCarSegment %>%
+                          left_join(componentSteel, by = c("components")) %>%
+                          mutate(mildSteel = mildSteel * meanSteel, HSS = HSS * meanSteel, AHSS = AHSS * meanSteel, UHSS = UHSS * meanSteel,
+                                castIron = castIron * meanSteel, stainlessSteel = stainlessSteel * meanSteel, AHSS_DualPhase = AHSS_DualPhase * meanSteel,
+                                alloySteel = alloySteel * meanSteel, Others = Others * meanSteel) %>% select(-meanSteel)
+
+componentCarSegment
+
+componentCarSegment <- componentCarSegment %>%
+                          left_join(componentMagnesium, by = c("components", "segment", "year")) %>% 
+                          rowwise() %>%
+                          mutate(reduction_factor = 1 - magnesium,  # Calculate the remaining ratio for the first 5 columns
+                                 across(Al_5xxx:castAluminiumAlSiMg, ~ .x * reduction_factor) # Scale down the first 5 columns
+                                ) %>%
+                          ungroup() %>% # Return to the default ungrouped state for further operations
+                          select(-reduction_factor)
+
+componentCarSegment <- bind_rows(componentCarSegment,  componentCarSegment %>% filter(segment %in% c("A", "B", "C", "D", "E", "F")) %>% mutate(segment = paste0("J", segment)))
+
+# calculate the standard segment
+componentCarSegment_standard <- componentCarSegment %>% filter(segment == "C" | segment == "D")
+componentCarSegment_standard <- componentCarSegment_standard %>% group_by(components, year) %>% summarise(Al_5xxx = mean(Al_5xxx), Al_6xxx = mean(Al_6xxx), Al_7xxx = mean(Al_7xxx), castAluminiumAlSiCu = mean(castAluminiumAlSiCu), 
+                                                                                                    castAluminiumAlSiMg = mean(castAluminiumAlSiMg), mildSteel = mean(mildSteel), HSS = mean(HSS), AHSS = mean(AHSS), UHSS = mean(UHSS),
+                                                                                                    castIron = mean(castIron), stainlessSteel = mean(stainlessSteel), AHSS_DualPhase = mean(AHSS_DualPhase), alloySteel = mean(alloySteel),
+                                                                                                    Others = mean(Others), magnesium = mean(magnesium), segment = "standard")
+componentCarSegment_standard
+
+componentCarSegment <- bind_rows(componentCarSegment, componentCarSegment_standard)
+
+# get ride of year for the moment
+componentCarSegment <- componentCarSegment %>% select(-year)
+
+componentCarSegment
+
+```
+
+## Calculate the weight of the differt Magnesium components to obtain the total amount of Magnesium
+
+```{r, message=FALSE, warning=FALSE}
+
+componentCarRatio <- componentCarRatio %>% select(-sum)
+
+# Add the SUV (J) part, which is identical with the respective sedan segment component weight ratio
+componentCarRatio <- bind_rows(componentCarRatio, componentCarRatio %>% filter(segment %in% c("A", "B", "C", "D", "E", "F")) %>% mutate(segment = paste0("J", segment)))
+
+# calculate the standard segment
+componentCarRatio_standard <- componentCarRatio %>% filter(segment == "C" | segment == "D")
+componentCarRatio_standard <- componentCarRatio_standard %>% group_by(components) %>% summarise(ratio = mean(ratio), segment = "standard")
+componentCarRatio <- bind_rows(componentCarRatio, componentCarRatio_standard)
+
+vehicleWeightRatio <- componentCarRatio %>% left_join(vehicleWeight, by = "segment") %>% mutate(weightratio = ratio * weight)
+vehicleWeightRatio
+```
+
+## Prepare componentCarSegment for the combination with vehicleWeight and combine them
+
+```{r, message=FALSE, warning=FALSE}
+
+componentCarSegementWeight <- componentCarSegment %>%
+                                    left_join(vehicleWeightRatio, by = c("segment", "components")) %>% 
+                                              mutate(calAl_5xxx = Al_5xxx * weightratio, calAl_6xxx = Al_6xxx * weightratio, calAl_7xxx = Al_7xxx * weightratio, calcastAluminiumAlSiCu = castAluminiumAlSiCu * weightratio,
+                                                     calcastAluminiumAlSiMg = castAluminiumAlSiMg * weightratio, calmildSteel = mildSteel * weightratio, calHSS = HSS * weightratio, calAHSS = AHSS * weightratio,
+                                                     calUHSS = UHSS * weightratio, calcastIron = castIron * weightratio, calstainlessSteel = stainlessSteel * weightratio, calAHSS_DualPhase = AHSS_DualPhase * weightratio,
+                                                     calalloySteel = alloySteel * weightratio, calOthers = Others * weightratio, calMagnesium = magnesium * weightratio) %>%
+                                                select(-Al_5xxx, -Al_6xxx, -Al_7xxx, -castAluminiumAlSiCu, -castAluminiumAlSiMg, -mildSteel, -HSS, -AHSS, -UHSS, -castIron, -stainlessSteel, -AHSS_DualPhase,
+                                                      -alloySteel, -Others, -magnesium)
+componentCarSegementWeight <- componentCarSegementWeight %>% mutate(total = calAl_5xxx + calAl_6xxx + calAl_7xxx + calcastAluminiumAlSiCu + calcastAluminiumAlSiMg + calmildSteel + calHSS + calAHSS + calUHSS +
+                                                                                              calcastIron + calstainlessSteel + calAHSS_DualPhase + calalloySteel + calOthers + calMagnesium,
+                                                                                            totalAl = calAl_5xxx + calAl_6xxx + calAl_7xxx + calcastAluminiumAlSiCu + calcastAluminiumAlSiMg,
+                                                                                            totalIronSteel = calmildSteel + calHSS + calAHSS + calUHSS + calcastIron + calstainlessSteel + calAHSS_DualPhase + calalloySteel + calOthers)
+
+componentCar <- componentCarSegementWeight
+componentCar
+```
+
+
+## Put everything together for a petrol car - add the composition for cathalyt and electronics
+
+```{r, message=FALSE, warning=FALSE}
+
+for (j in (startYear:endYear)) {
+
+  compositionPetrol <- composition %>% filter(productKeyLevel1 == "elvPetrol" & year == j)
+  compositionPetrol <- compositionPetrol %>% select(-c(totalAlCalculate, castingAlCalculate, extrusionAlCalculate, forgingAlCalculate, sheetAlCalculate,
+                                                     castIronCalculate, mildSteelCalculate, HSSCalculate, AHSSCalculate, UHSSCalculate, totalIronSteelCalculate, MgCalculate,
+                                                     totalAlloys, totalPPR, EED_total, totalMetals, totalOtherMaterilas, total, engineCable, perMagnet, battery, generatorCable, generatorperMagnet))
+
+  compositionPetrol
+
+  componentCarPetrol <- componentCar %>% filter(productKeyLevel1 == "elvPetrol" & year == j)
+
+  componentCarPetrol <- componentCarPetrol %>%
+    mutate(
+      calculatePt = 0,
+      calculatePd = 0,
+      calculateRh = 0,
+      calculateCe = 0,
+      calculateLa = 0,
+      powerElectronics = 0,
+      actuators = 0,
+      controllers = 0,
+      light = 0,
+      cableLike = 0,
+    )
+
+  componentCarPetrol
+
+  unique_names <- componentCarPetrol %>% 
+    distinct(segment) %>%
+    pull(segment)
+
+  for (i in 1:length(unique_names)) {
+    temp1 <- compositionPetrol %>% filter(segment == unique_names[i])
+    temp2 <- componentCarPetrol %>% filter(segment == unique_names[i])
+
+    componentCarPetrol <- componentCarPetrol %>%
+      add_row(
+        components = "elvCatalyticConverters",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = (temp1$calculatePt + temp1$calculatePd + temp1$calculateRh + temp1$calculateCe + temp1$calculateLa) / temp2$weight[1],
+        weight = temp2$weight[1],
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        weightratio = temp1$calculatePt + temp1$calculatePd + temp1$calculateRh + temp1$calculateCe + temp1$calculateLa,
+        calculatePt = temp1$calculatePt,
+        calculatePd = temp1$calculatePd,
+        calculateRh = temp1$calculateRh,
+        calculateCe = temp1$calculateCe,
+        calculateLa = temp1$calculateLa,
+      ) %>%
+      add_row(
+        components = "elvPowerElectronics",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$powerElectronics / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$powerElectronics,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        powerElectronics = temp1$powerElectronics
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsActuators",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$actuators / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$actuators,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        actuators = temp1$actuators
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsControllers",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$controllers / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$controllers,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        controllers = temp1$controllers
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsHeadlights",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$light / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$light,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        light = temp1$light
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsCables",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$cableLike / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$cableLike,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        cableLike = temp1$cableLike
+      )
+
+    tempCarPetrol <- componentCarPetrol %>%
+      mutate(across(everything(), ~ifelse(is.na(.), 0, .)))
+  }
+  if(j == startYear) {
+    collectCarPetrol <- tempCarPetrol
+  }
+  else {
+    collectCarPetrol <- bind_rows(collectCarPetrol, tempCarPetrol)
+  }
+}
+componentCarPetrol <- collectCarPetrol
+```
+
+
+
+## Put everything together for a diesel car - add the composition for cathalyt and electronics
+
+```{r, message=FALSE, warning=FALSE}
+
+for (j in (startYear:endYear)) {
+
+  compositionDiesel <- composition %>% filter(productKeyLevel1 == "elvDiesel" & year == j)
+  compositionDiesel <- compositionDiesel %>% select(-c(totalAlCalculate, castingAlCalculate, extrusionAlCalculate, forgingAlCalculate, sheetAlCalculate,
+                                                     castIronCalculate, mildSteelCalculate, HSSCalculate, AHSSCalculate, UHSSCalculate, totalIronSteelCalculate, MgCalculate,
+                                                     totalAlloys, totalPPR, EED_total, totalMetals, totalOtherMaterilas, total, engineCable, perMagnet, battery, generatorCable, generatorperMagnet))
+
+  compositionDiesel
+
+  componentCarDiesel <- componentCar %>% filter(productKeyLevel1 == "elvDiesel" & year == j)
+
+  componentCarDiesel <- componentCarDiesel %>%
+    mutate(
+      calculatePt = 0,
+      calculatePd = 0,
+      calculateRh = 0,
+      calculateCe = 0,
+      calculateLa = 0,
+      powerElectronics = 0,
+      actuators = 0,
+      controllers = 0,
+      light = 0,
+      cableLike = 0
+    )
+
+  componentCarDiesel
+
+  unique_names <- componentCarDiesel %>% 
+    distinct(segment) %>%
+    pull(segment)
+
+  for (i in 1:length(unique_names)) {
+    temp1 <- compositionDiesel %>% filter(segment == unique_names[i])
+    temp2 <- componentCarDiesel %>% filter(segment == unique_names[i])
+
+    componentCarDiesel <- componentCarDiesel %>%
+      add_row(
+        components = "elvCatalyticConverters",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = (temp1$calculatePt + temp1$calculatePd + temp1$calculateRh + temp1$calculateCe + temp1$calculateLa) / temp2$weight[1],
+        weight = temp2$weight[1],
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        weightratio = temp1$calculatePt + temp1$calculatePd + temp1$calculateRh + temp1$calculateCe + temp1$calculateLa,
+        calculatePt = temp1$calculatePt,
+        calculatePd = temp1$calculatePd,
+        calculateRh = temp1$calculateRh,
+        calculateCe = temp1$calculateCe,
+        calculateLa = temp1$calculateLa,
+      ) %>%
+      add_row(
+        components = "elvPowerElectronics",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$powerElectronics / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$powerElectronics,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        powerElectronics = temp1$powerElectronics
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsActuators",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$actuators / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$actuators,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        actuators = temp1$actuators
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsControllers",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$controllers / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$controllers,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        controllers = temp1$controllers
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsHeadlights",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$light / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$light,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        light = temp1$light
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsCables",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$cableLike / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$cableLike,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        cableLike = temp1$cableLike
+      )
+
+    tempCarDiesel <- componentCarDiesel %>%
+      mutate(across(everything(), ~ifelse(is.na(.), 0, .)))
+  }
+  if(j == startYear) {
+    collectCarDiesel <- tempCarDiesel
+  }
+  else {
+    collectCarDiesel <- bind_rows(collectCarDiesel, tempCarDiesel)
+  }
+}
+componentCarDiesel <- collectCarDiesel
+```
+
+
+
+## Put everything together for a BEV - add the composition for electronics, electric motor and battery
+
+```{r, message=FALSE, warning=FALSE}
+
+for (j in (startYearBEV:endYear)) {
+
+  compositionBEV <- composition %>% filter(productKeyLevel1 == "elvBEV" & year == j)
+  compositionBEV <- compositionBEV %>% select(-c(totalAlCalculate, castingAlCalculate, extrusionAlCalculate, forgingAlCalculate, sheetAlCalculate,
+                                                     castIronCalculate, mildSteelCalculate, HSSCalculate, AHSSCalculate, UHSSCalculate, totalIronSteelCalculate, MgCalculate,
+                                                     totalAlloys, totalPPR, EED_total, totalMetals, totalOtherMaterilas, total, generatorCable, generatorperMagnet))
+
+  compositionBEV
+
+  componentCarBEV <- componentCar %>% filter(productKeyLevel1 == "elvBEV" & year == j)
+
+  componentCarBEV <- componentCarBEV %>%
+    mutate(
+      powerElectronics = 0,
+      actuators = 0,
+      controllers = 0,
+      light = 0,
+      cableLike = 0,
+      engineCable = 0,
+      perMagnet = 0,
+      battery = 0
+    )
+
+  componentCarBEV
+
+  unique_names <- componentCarBEV %>% 
+    distinct(segment) %>%
+    pull(segment)
+
+  for (i in 1:length(unique_names)) {
+    temp1 <- compositionBEV %>% filter(segment == unique_names[i])
+    temp2 <- componentCarBEV %>% filter(segment == unique_names[i])
+
+    componentCarBEV <- componentCarBEV %>%
+      add_row(
+        components = "elvPowerElectronics",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$powerElectronics / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$powerElectronics,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        powerElectronics = temp1$powerElectronics
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsActuators",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$actuators / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$actuators,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        actuators = temp1$actuators
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsControllers",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$controllers / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$controllers,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        controllers = temp1$controllers
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsHeadlights",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$light / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$light,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        light = temp1$light
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsCables",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$cableLike / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$cableLike,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        cableLike = temp1$cableLike
+      ) %>%
+      add_row(
+        components = "elvElectricMotorCable",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$engineCable / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$engineCable,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        engineCable = temp1$engineCable
+      ) %>%
+      add_row(
+        components = "elvElectricMotorPermanentMagnets",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$perMagnet / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$perMagnet,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        perMagnet = temp1$perMagnet
+      ) %>%
+      add_row(
+        components = "elvBattery",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$battery / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$battery,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        battery = temp1$battery
+      )
+
+    tempCarBEV <- componentCarBEV %>%
+      mutate(across(everything(), ~ifelse(is.na(.), 0, .)))
+  }
+  if(j == startYearBEV) {
+    collectCarBEV <- tempCarBEV
+  }
+  else {
+    collectCarBEV <- bind_rows(collectCarBEV, tempCarBEV)
+  }
+}
+componentCarBEV <- collectCarBEV
+```
+
+
+
+## Put everything together for a HEV - add the composition for electronics, electric motor and battery
+
+```{r, message=FALSE, warning=FALSE}
+
+for (j in (startYearHEV:endYear)) {
+
+  compositionHEV <- composition %>% filter(productKeyLevel1 == "elvHEV" & year == j)
+  compositionHEV <- compositionHEV %>% select(-c(totalAlCalculate, castingAlCalculate, extrusionAlCalculate, forgingAlCalculate, sheetAlCalculate,
+                                                     castIronCalculate, mildSteelCalculate, HSSCalculate, AHSSCalculate, UHSSCalculate, totalIronSteelCalculate, MgCalculate,
+                                                     totalAlloys, totalPPR, EED_total, totalMetals, totalOtherMaterilas, total))
+
+  compositionHEV
+
+  componentCarHEV <- componentCar %>% filter(productKeyLevel1 == "elvHEV" & year == j)
+
+  componentCarHEV <- componentCarHEV %>%
+    mutate(
+      calculatePt = 0,
+      calculatePd = 0,
+      calculateRh = 0,
+      calculateCe = 0,
+      calculateLa = 0,
+      powerElectronics = 0,
+      actuators = 0,
+      controllers = 0,
+      light = 0,
+      cableLike = 0,
+      engineCable = 0,
+      perMagnet = 0,
+      generatorCable = 0,
+      generatorperMagnet = 0,
+      generatorCable = 0,
+      generatorperMagnet = 0,
+      battery = 0
+    )
+
+  componentCarHEV
+
+  unique_names <- componentCarHEV %>% 
+    distinct(segment) %>%
+    pull(segment)
+
+  for (i in 1:length(unique_names)) {
+    temp1 <- compositionHEV %>% filter(segment == unique_names[i])
+    temp2 <- componentCarHEV %>% filter(segment == unique_names[i])
+
+    componentCarHEV <- componentCarHEV %>%
+      add_row(
+        components = "elvCatalyticConverters",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = (temp1$calculatePt + temp1$calculatePd + temp1$calculateRh + temp1$calculateCe + temp1$calculateLa) / temp2$weight[1],
+        weight = temp2$weight[1],
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        weightratio = temp1$calculatePt + temp1$calculatePd + temp1$calculateRh + temp1$calculateCe + temp1$calculateLa,
+        calculatePt = temp1$calculatePt,
+        calculatePd = temp1$calculatePd,
+        calculateRh = temp1$calculateRh,
+        calculateCe = temp1$calculateCe,
+        calculateLa = temp1$calculateLa,
+      ) %>%
+      add_row(
+        components = "elvPowerElectronics",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$powerElectronics / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$powerElectronics,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        powerElectronics = temp1$powerElectronics
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsActuators",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$actuators / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$actuators,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        actuators = temp1$actuators
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsControllers",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$controllers / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$controllers,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        controllers = temp1$controllers
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsHeadlights",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$light / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$light,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        light = temp1$light
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsCables",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$cableLike / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$cableLike,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        cableLike = temp1$cableLike
+      ) %>%
+      add_row(
+        components = "elvElectricMotorCable",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$engineCable / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$engineCable,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        engineCable = temp1$engineCable
+      ) %>%
+      add_row(
+        components = "elvElectricMotorPermanentMagnets",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$perMagnet / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$perMagnet,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        perMagnet = temp1$perMagnet
+      ) %>%
+      add_row(
+        components = "elvgeneratorCable",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$generatorCable / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$generatorCable,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        generatorCable = temp1$generatorCable
+      ) %>%
+      add_row(
+        components = "elvgeneratorperMagnet",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$generatorperMagnet / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$generatorperMagnet,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        generatorperMagnet = temp1$generatorperMagnet
+      ) %>%
+      add_row(
+        components = "elvBattery",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$battery / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$battery,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        battery = temp1$battery
+      )
+
+    tempCarHEV <- componentCarHEV %>%
+      mutate(across(everything(), ~ifelse(is.na(.), 0, .)))
+  }
+  if(j == startYearHEV) {
+    collectCarHEV <- tempCarHEV
+  }
+  else {
+    collectCarHEV <- bind_rows(collectCarHEV, tempCarHEV)
+  }
+}
+componentCarHEV <- collectCarHEV
+```
+
+
+## Put everything together for a PHEV - add the composition for electronics, electric motor and battery
+
+```{r, message=FALSE, warning=FALSE}
+
+for (j in (startYearPHEV:endYear)) {
+
+  compositionPHEV <- composition %>% filter(productKeyLevel1 == "elvPHEV" & year == j)
+  compositionPHEV <- compositionPHEV %>% select(-c(totalAlCalculate, castingAlCalculate, extrusionAlCalculate, forgingAlCalculate, sheetAlCalculate,
+                                                     castIronCalculate, mildSteelCalculate, HSSCalculate, AHSSCalculate, UHSSCalculate, totalIronSteelCalculate, MgCalculate,
+                                                     totalAlloys, totalPPR, EED_total, totalMetals, totalOtherMaterilas, total))
+
+  compositionPHEV
+
+  componentCarPHEV <- componentCar %>% filter(productKeyLevel1 == "elvPHEV" & year == j)
+
+  componentCarPHEV <- componentCarPHEV %>%
+    mutate(
+      calculatePt = 0,
+      calculatePd = 0,
+      calculateRh = 0,
+      calculateCe = 0,
+      calculateLa = 0,
+      powerElectronics = 0,
+      actuators = 0,
+      controllers = 0,
+      light = 0,
+      cableLike = 0,
+      engineCable = 0,
+      perMagnet = 0,
+      generatorCable = 0,
+      generatorperMagnet = 0,
+      generatorCable = 0,
+      generatorperMagnet = 0,
+      battery = 0
+    )
+
+  componentCarPHEV
+
+  unique_names <- componentCarPHEV %>% 
+    distinct(segment) %>%
+    pull(segment)
+
+  for (i in 1:length(unique_names)) {
+    temp1 <- compositionPHEV %>% filter(segment == unique_names[i])
+    temp2 <- componentCarPHEV %>% filter(segment == unique_names[i])
+
+    componentCarPHEV <- componentCarPHEV %>%
+      add_row(
+        components = "elvCatalyticConverters",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = (temp1$calculatePt + temp1$calculatePd + temp1$calculateRh + temp1$calculateCe + temp1$calculateLa) / temp2$weight[1],
+        weight = temp2$weight[1],
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        weightratio = temp1$calculatePt + temp1$calculatePd + temp1$calculateRh + temp1$calculateCe + temp1$calculateLa,
+        calculatePt = temp1$calculatePt,
+        calculatePd = temp1$calculatePd,
+        calculateRh = temp1$calculateRh,
+        calculateCe = temp1$calculateCe,
+        calculateLa = temp1$calculateLa,
+      ) %>%
+      add_row(
+        components = "elvPowerElectronics",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$powerElectronics / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$powerElectronics,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        powerElectronics = temp1$powerElectronics
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsActuators",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$actuators / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$actuators,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        actuators = temp1$actuators
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsControllers",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$controllers / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$controllers,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        controllers = temp1$controllers
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsHeadlights",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$light / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$light,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        light = temp1$light
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsCables",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$cableLike / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$cableLike,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        cableLike = temp1$cableLike
+      ) %>%
+      add_row(
+        components = "elvElectricMotorCable",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$engineCable / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$engineCable,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        engineCable = temp1$engineCable
+      ) %>%
+      add_row(
+        components = "elvElectricMotorPermanentMagnets",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$perMagnet / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$perMagnet,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        perMagnet = temp1$perMagnet
+      ) %>%
+      add_row(
+        components = "elvgeneratorCable",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$generatorCable / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$generatorCable,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        generatorCable = temp1$generatorCable
+      ) %>%
+      add_row(
+        components = "elvgeneratorperMagnet",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$generatorperMagnet / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$generatorperMagnet,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        generatorperMagnet = temp1$generatorperMagnet
+      ) %>%
+      add_row(
+        components = "elvBattery",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$battery / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$battery,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        battery = temp1$battery
+      )
+
+    tempCarPHEV <- componentCarPHEV %>%
+      mutate(across(everything(), ~ifelse(is.na(.), 0, .)))
+  }
+  if(j == startYearPHEV) {
+    collectCarPHEV <- tempCarPHEV
+  }
+  else {
+    collectCarPHEV <- bind_rows(collectCarPHEV, tempCarPHEV)
+  }
+}
+componentCarPHEV <- collectCarPHEV
+```
+
+
+## Put everything together for a Other - add the composition for electronics, electric motor and battery
+
+```{r, message=FALSE, warning=FALSE}
+
+for (j in (startYearOther:endYear)) {
+
+  compositionOther <- composition %>% filter(productKeyLevel1 == "elvOther" & year == j)
+  compositionOther <- compositionOther %>% select(-c(totalAlCalculate, castingAlCalculate, extrusionAlCalculate, forgingAlCalculate, sheetAlCalculate,
+                                                     castIronCalculate, mildSteelCalculate, HSSCalculate, AHSSCalculate, UHSSCalculate, totalIronSteelCalculate, MgCalculate,
+                                                     totalAlloys, totalPPR, EED_total, totalMetals, totalOtherMaterilas, total, generatorCable, generatorperMagnet))
+
+  compositionOther
+
+  componentCarOther <- componentCar %>% filter(productKeyLevel1 == "elvOther" & year == j)
+
+  componentCarOther <- componentCarOther %>%
+    mutate(
+      powerElectronics = 0,
+      actuators = 0,
+      controllers = 0,
+      light = 0,
+      cableLike = 0,
+      engineCable = 0,
+      perMagnet = 0
+    )
+
+  componentCarOther
+
+  unique_names <- componentCarOther %>% 
+    distinct(segment) %>%
+    pull(segment)
+
+  for (i in 1:length(unique_names)) {
+    temp1 <- compositionOther %>% filter(segment == unique_names[i])
+    temp2 <- componentCarOther %>% filter(segment == unique_names[i])
+
+    componentCarOther <- componentCarOther %>%
+      add_row(
+        components = "elvPowerElectronics",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$powerElectronics / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$powerElectronics,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        powerElectronics = temp1$powerElectronics
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsActuators",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$actuators / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$actuators,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        actuators = temp1$actuators
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsControllers",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$controllers / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$controllers,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        controllers = temp1$controllers
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsHeadlights",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$light / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$light,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        light = temp1$light
+      ) %>%
+      add_row(
+        components = "elvEmbeddedElectronicsCables",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$cableLike / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$cableLike,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        cableLike = temp1$cableLike
+      ) %>%
+      add_row(
+        components = "elvElectricMotorCable",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$engineCable / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$engineCable,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        engineCable = temp1$engineCable
+      ) %>%
+      add_row(
+        components = "elvElectricMotorPermanentMagnets",
+        segment = temp1$segment,
+        year = temp1$year,
+        ratio = temp1$perMagnet / temp2$weight[1],
+        weight = temp2$weight[1],
+        weightratio = temp1$perMagnet,
+        productKeyLevel1 = temp1$productKeyLevel1, 
+        productKeyLevel2 = temp1$productKeyLevel2,
+        perMagnet = temp1$perMagnet
+      )
+
+    tempCarOther <- componentCarOther %>%
+      mutate(across(everything(), ~ifelse(is.na(.), 0, .)))
+  }
+  if(j == startYearOther) {
+    collectCarOther <- tempCarOther
+  }
+  else {
+    collectCarOther <- bind_rows(collectCarOther, tempCarOther)
+  }
+}
+componentCarOther <- collectCarOther
+```
+
+
+## Calculate the rest material and then the total, which has to match the total of each segment
+
+```{r, message=FALSE, warning=FALSE}
+
+componentCarPetrol <- componentCarPetrol %>% group_by(segment, year) %>% mutate(totalComponents = sum(total))
+componentCarPetrol <- componentCarPetrol %>% group_by(segment, year) %>% mutate(totalRest = weight - totalComponents)
+componentCarPetrol
+
+componentCarDiesel <- componentCarDiesel %>% group_by(segment, year) %>% mutate(totalComponents = sum(total))
+componentCarDiesel <- componentCarDiesel %>% group_by(segment, year) %>% mutate(totalRest = weight - totalComponents)
+componentCarDiesel
+
+componentCarBEV <- componentCarBEV %>% group_by(segment, year) %>% mutate(totalComponents = sum(total))
+componentCarBEV <- componentCarBEV %>% group_by(segment, year) %>% mutate(totalRest = weight - totalComponents)
+componentCarBEV
+
+componentCarHEV <- componentCarHEV %>% group_by(segment, year) %>% mutate(totalComponents = sum(total))
+componentCarHEV <- componentCarHEV %>% group_by(segment, year) %>% mutate(totalRest = weight - totalComponents)
+componentCarHEV
+
+componentCarPHEV <- componentCarPHEV %>% group_by(segment, year) %>% mutate(totalComponents = sum(total))
+componentCarPHEV <- componentCarPHEV %>% group_by(segment, year) %>% mutate(totalRest = weight - totalComponents)
+componentCarPHEV
+
+componentCarOther <- componentCarOther %>% group_by(segment, year) %>% mutate(totalComponents = sum(total))
+componentCarOther <- componentCarOther %>% group_by(segment, year) %>% mutate(totalRest = weight - totalComponents)
+componentCarOther
+
+```
+
+
+## write to excel file as output
+
+```{r, message=FALSE, warning=FALSE}
+# Vector of dataframe names
+df_names <- c("componentCarPetrol", "componentCarDiesel", "componentCarBEV", 
+              "componentCarHEV", "componentCarPHEV", "componentCarOther")
+
+# Create workbook
+wb <- createWorkbook()
+
+# Loop through and add each dataframe
+for(df_name in df_names) {
+  addWorksheet(wb, df_name)
+  writeData(wb, df_name, get(df_name))  # get() retrieves the dataframe by name
+}
+
+# Save workbook
+saveWorkbook(wb, filename35_output, overwrite = TRUE)
+
+```

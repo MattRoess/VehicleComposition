@@ -1,0 +1,186 @@
+---
+title: "Generate the data of the different materials of Vehicle Composition based on different studies and previous data"
+author: "Matthias Roesslein - Empa"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+tags: [FutuRaM, Empa, vehicles, car, van, Al, Fe]
+abstract:
+  Calculate for given data the standard composition of a vehicle and their different car segments (a, b, c etc.). It is first done for aluminum alloys (Al), iron/steel alloys (Fe)
+
+version: 0.8
+output:
+  pdf_document:
+    latex_engine: xelatex
+header-includes:
+  - \geometry{landscape, margin=1in}  # Setzt das gesamte Dokument auf Landscape
+  - \usepackage{fontspec}
+  - \setmainfont{Arial}  # Optional: Setzt die Schriftart auf Arial
+  - \setmonofont{Courier New}
+  - \renewcommand{\familydefault}{\sfdefault}  # Optional: Setzt serifenlose Schriftart als Standard
+  - \usepackage{fancyvrb}
+  - \fvset{fontfamily=Courier, fontsize=\footnotesize}  # Setzt Monospace-Schriftart für den Code
+---
+
+**Copyright notice:** Copyright © 2025 Empa, Matthias Roesslein
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Data Analysis
+
+## Prepare for the analysis
+
+### Loading of the libraries
+
+We are using tidyverse framework to rearrange and analysis the data. 
+
+```{r, message=FALSE, warning=FALSE}
+# load libraries
+library(tidyverse)
+library(dplyr)
+library(broom)
+library(data.table)
+library(stringr)
+library(ggplot2)
+library(scales)
+library(forcats)
+
+library("readxl") # read excel files
+library("openxlsx")   #The openxlsx package is highly customizable and allows you to: Write multiple data frames to different sheets of the same Excel file. Customize formatting, such as column widths, bold headers, and colors.
+
+library(rmarkdown)
+```
+
+```{r, message=FALSE, warning=FALSE}
+#tidyverse_conflicts()
+```
+
+
+## Read the data
+
+```{r, message=FALSE, warning=FALSE}
+
+filename23_input <- "Data/23_CompositionDataUpdated.xlsx"
+filename35_input <- "Data/35_VehicleComponentData.xlsx"
+
+# Read the data
+dataTotal <- read_excel(filename23_input, sheet = "FutuRaM-ELV")
+
+dataComponentPetrol <- read_excel(filename35_input, sheet = "componentCarPetrol")
+dataComponentDiesel <- read_excel(filename35_input, sheet = "componentCarDiesel")
+dataComponentBEV <- read_excel(filename35_input, sheet = "componentCarBEV")
+dataComponentHEV <- read_excel(filename35_input, sheet = "componentCarHEV")
+dataComponentPHEV <- read_excel(filename35_input, sheet = "componentCarPHEV")
+dataComponentOther <- read_excel(filename35_input, sheet = "componentCarOther")
+
+```
+
+## Start with the comparison
+
+It is done for the year 2020. Therefore we filter the datasets first and then combine the dataset, so that we can plot them
+
+```{r, message=FALSE, warning=FALSE}
+
+dataTotal_2020 <- dataTotal %>% filter(year == 2020, productKeyLevel1 == "elvPetrol")
+dataTotal_2020 <- dataTotal_2020 %>% rename(totalAl = totalAlCalculate, totalIronSteel = totalIronSteelCalculate)
+dataTotal_2020 <- dataTotal_2020 %>% select(productKeyLevel2, totalAl, totalIronSteel) %>% mutate(totalMetal = totalAl + totalIronSteel, model = "total")
+
+dataComponentPetrol_2020 <- dataComponentPetrol %>% filter(year == 2020)
+dataComponentPetrol_summary <- dataComponentPetrol_2020 %>%   group_by(productKeyLevel2) %>% summarise(totalAl = sum(totalAl, na.rm = TRUE), totalIronSteel = sum(totalIronSteel)) %>%
+                                  mutate(totalMetal = totalAl + totalIronSteel, model = "component")
+
+
+```
+
+## Start display different comparisions
+
+```{r, message=FALSE, warning=FALSE}
+
+# Combine and convert to long format
+dataCheck01 <- dataTotal_2020 %>% bind_rows(dataComponentPetrol_summary) %>% pivot_longer(cols = c(totalAl, totalIronSteel, totalMetal), names_to = "metals", values_to = "values") %>%
+                  mutate(error_margin = values * 0.20,  ymin = values - error_margin, ymax = values + error_margin)
+dataCheck01
+
+# Set this at the beginning of your notebook (in the setup chunk)
+theme_set(
+  theme_bw() +
+    theme(
+      panel.grid.major = element_blank(),  # Remove major grid lines
+      panel.grid.minor = element_blank(),  # Remove minor grid lines
+      text = element_text(size = 15),
+      axis.title = element_text(size = 16, face = "bold"),
+      axis.text = element_text(size = 15, color = "black"),
+      legend.title = element_text(size = 15, face = "bold"),
+      plot.title = element_text(size = 16, face = "bold", hjust = 0.5)
+    )
+)
+
+# First comparison for petrol cars with total Metal
+
+dodge_width <- 0.9
+
+p1 <- dataCheck01 %>% filter(metals == "totalMetal") %>%
+      ggplot(aes(x = productKeyLevel2, y = values, fill = model)) +
+      geom_col(position = position_dodge(0.8)) +
+      geom_errorbar(aes(ymin = ymin, ymax = ymax), position = position_dodge(0.8), width = 0.25, color = "black") +
+      ggtitle("Total Metal") +
+      scale_y_continuous(name = "mass (kg)", limits = c(0, 2300)) +
+      theme(axis.text.x = element_text(angle = 90, 
+                                   vjust = 0.5,    # Vertical alignment
+                                   hjust = 1),
+         plot.title = element_text(hjust = 0.5))     # Horizontal alignment
+
+plot(p1)
+
+ggsave("Data/Figure13A.png", plot = p1, width = 11.7, height = 8.3, units = "in", dpi = 300)
+
+p2 <- dataCheck01 %>% filter(metals == "totalAl") %>%
+        ggplot(aes(x = productKeyLevel2, y = values, fill = model)) +
+          geom_col(position = position_dodge(0.8)) +
+          geom_errorbar(aes(ymin = ymin, ymax = ymax), position = position_dodge(0.8), width = 0.25, color = "black") +
+          ggtitle("Total Aluminum") +
+          scale_y_continuous(name = "mass (kg)", limits = c(0, 700)) +
+          theme(axis.text.x = element_text(angle = 90, 
+                                   vjust = 0.5,    # Vertical alignment
+                                   hjust = 1),
+         plot.title = element_text(hjust = 0.5))     # Horizontal alignment
+
+plot(p2)
+
+ggsave("Data/Figure13B.png", plot = p2, width = 11.7, height = 8.3, units = "in", dpi = 300)
+
+p3 <- dataCheck01 %>% filter(metals == "totalIronSteel") %>%
+        ggplot(aes(x = productKeyLevel2, y = values, fill = model)) +
+          geom_col(position = position_dodge(0.8)) +
+          geom_errorbar(aes(ymin = ymin, ymax = ymax), position = position_dodge(0.8), width = 0.25, color = "black") +
+          ggtitle("Total Iron and Steel") +
+          scale_y_continuous(name = "mass (kg)", limits = c(0, 1700)) +
+          theme(axis.text.x = element_text(angle = 90, 
+                                   vjust = 0.5,    # Vertical alignment
+                                   hjust = 1),
+         plot.title = element_text(hjust = 0.5))     # Horizontal alignment
+
+plot(p3)
+
+ggsave("Data/Figure13C.png", plot = p3, width = 11.7, height = 8.3, units = "in", dpi = 300)
+
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+
+dataCheck02 <- dataComponentPetrol_2020 %>% select(components, productKeyLevel2, totalAl, totalIronSteel, total)
+dataCheck02
+
+dataCheck02 %>% 
+  ggplot(aes(x = productKeyLevel2, y = totalAl, fill = components)) +
+    geom_col() +
+    ggtitle("Total Aluminum by Product and Component") +
+    theme(
+      axis.text.x = element_text(angle = 90, 
+                                vjust = 0.5,
+                                hjust = 1),
+      plot.title = element_text(hjust = 0.5)
+    )
+
+```

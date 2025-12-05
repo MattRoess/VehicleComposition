@@ -1,0 +1,2000 @@
+---
+title: "Calculate the materials mix for given alloys used for Vehicle Composition based on standards and estimates"
+author: "Matthias Roesslein - Empa"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+tags: [FutuRaM, Empa, vehicles, car, van, Al, Fe, Mg]
+abstract: |
+  Focus on the different types of wrought aluminium. Put them together according to the main classes.
+  - Extrusion aluminium allowys consist mainly of EN AW-6XXX series
+  - Forging aluminium alloys consist mainly of EN AW-2XXX series
+  - Sheet aluminium alloys consists minly of EN AW-5XXX series
+  
+version: 2.5.0
+fontsize: 11pt
+output:
+  pdf_document: default
+    df_print: paged
+---
+
+**Copyright notice:** Copyright © 2024 & 2025 Empa, Matthias Roesslein
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Data Analysis
+
+## Loading of the libraries
+
+We are using tidyverse framework to rearrange and analysis the data. 
+
+```{r, message=FALSE, warning=FALSE}
+# load libraries
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(stringr)
+library(ggplot2)
+library(scales)
+library(forcats)
+
+library("readxl") # read excel files
+library(WriteXLS) # uses Perl and not Java - Java has a licence issue and should not be used at Empa 
+```
+
+```{r, message=FALSE, warning=FALSE}
+tidyverse_conflicts()
+```
+
+## Input file nmae
+
+```{r, message=FALSE, warning=FALSE}
+filename14 <- "Data/14_VehicleMaterialElementDefinitions.xlsx"       # Material definitions according to international standards
+
+```
+
+## Output file name
+
+```{r, message=FALSE, warning=FALSE}
+filename22 <- "Data/22_MaterialElementComposition.xlsx"       # This is the output file specifying the material element composition of different alloys used in vehicle production
+```
+
+## Get the material composition for the different alloys and their specified (defined) mixtures
+
+```{r, message=FALSE, warning=FALSE}
+materialsAlCastAlloys1 <- read_excel(filename14, sheet = "castAlAlloys1")
+materialsAlCastAlloys2Low <- read_excel(filename14, sheet = "castAlAlloys2Low")
+materialsAlCastAlloys2High <- read_excel(filename14, sheet = "castAlAlloys2High")
+materialsAlWrought1000sLow <- read_excel(filename14, sheet = "Wrought1000sLow")
+materialsAlWrought1000sHigh <- read_excel(filename14, sheet = "Wrought1000sHigh")
+materialsAlWrought2000sLow <- read_excel(filename14, sheet = "Wrought2000sLow")
+materialsAlWrought2000sHigh <- read_excel(filename14, sheet = "Wrought2000sHigh")
+materialsAlWrought3000sLow <- read_excel(filename14, sheet = "Wrought3000sLow")
+materialsAlWrought3000sHigh <- read_excel(filename14, sheet = "Wrought3000sHigh")
+materialsAlWrought4000sLow <- read_excel(filename14, sheet = "Wrought4000sLow")
+materialsAlWrought4000sHigh <- read_excel(filename14, sheet = "Wrought4000sHigh")
+materialsAlWrought5000sLow <- read_excel(filename14, sheet = "Wrought5000sLow")
+materialsAlWrought5000sHigh <- read_excel(filename14, sheet = "Wrought5000sHigh")
+materialsAlWrought6000sLow <- read_excel(filename14, sheet = "Wrought6000sLow")
+materialsAlWrought6000sHigh <- read_excel(filename14, sheet = "Wrought6000sHigh")
+materialsAlWrought7000sLow <- read_excel(filename14, sheet = "Wrought7000sLow")
+materialsAlWrought7000sHigh <- read_excel(filename14, sheet = "Wrought7000sHigh")
+
+castAlDefinition1 <- read_excel(filename14, sheet = "castAlAlloysDefinition1")
+castAlDefinition2 <- read_excel(filename14, sheet = "castAlAlloysDefinition2")
+extrusionAlDefinition <- read_excel(filename14, sheet = "extrusionAlAlloysDefinition")
+forgingAlDefinition <- read_excel(filename14, sheet = "forgingAlAlloysDefinition")
+sheetAlDefinition <- read_excel(filename14, sheet = "sheetAlAlloysDefinition")
+
+materialsFeCastIron <- read_excel(filename14, sheet = "castIron")
+materialsFeMildSteel <- read_excel(filename14, sheet = "mildSteel")
+materialsFeHSSteel <- read_excel(filename14, sheet = "HSSteel")
+materialsFeUHSSteel <- read_excel(filename14, sheet = "UHSSteel")
+materialsFeAHSSteel <- read_excel(filename14, sheet = "AHSSteel")
+
+castIronDefinition <- read_excel(filename14, sheet = "castIronDefinition")
+mildSteelDefinition <- read_excel(filename14, sheet = "mildSteelDefinition")
+HSSteelDefinition <- read_excel(filename14, sheet = "HSSteelDefinition")
+UHSSteelDefinition <- read_excel(filename14, sheet = "UHSSteelDefinition")
+AHSSteelDefinition <- read_excel(filename14, sheet = "AHSSteelDefinition")
+
+materialsMgAlloys <- read_excel(filename14, sheet = "magnesiumAlloys")
+
+magnesiumDefinition <- read_excel(filename14, sheet = "magnesiumDefinition")
+
+materialsElectronicsPCB <- read_excel(filename14, sheet = "ElectronicsPCB")
+materialsCable <- read_excel(filename14, sheet = "Cable")
+materialsPermanentMagnet <- read_excel(filename14, sheet = "PermanentMagnet")
+
+PCBsLightsDefinition <- read_excel(filename14, sheet = "PCBsLightsDefinition")
+PCBsActuatorsDefinition  <- read_excel(filename14, sheet = "PCBsActuatorsDefinition")
+PCBsControllersDefinition  <- read_excel(filename14, sheet = "PCBsControllersDefinition")
+PCBsPowerelectronicsDefinition  <- read_excel(filename14, sheet = "PCBsPowerelectronicsDefinition")
+
+CableInsulatedDefinition <- read_excel(filename14, sheet = "CableInsulatedDefinition")
+CableEngineDefinition  <- read_excel(filename14, sheet = "CableEngineDefinition") 
+
+PermanentMagnetDefinition  <- read_excel(filename14, sheet = "PermanentMagnetDefinition") 
+
+```
+
+## Go through the different alloys and calculate the mean material composition
+
+### Cast Aluminium 1
+
+```{r, message=FALSE, warning=FALSE}
+
+materialsAlCastAlloys1 <- materialsAlCastAlloys1 %>% add_column(limits = "mean")
+# the following equation might need adjustment, if elements are deleted or other elements are added -------------------------------------------------------------------------------------
+materialsAlCastAlloys1 <- materialsAlCastAlloys1 %>% mutate(Al = 100 - Fe - Si - Mn - Ni - Cr - Ti - Cu - Pb - Mg - Zn - Sn)
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+materialsAlCastAlloys1
+
+materialsAlCastAlloys1_long <- materialsAlCastAlloys1 %>% pivot_longer(cols = !c(Numerisch, limits), names_to = "Element", values_to = "values")
+
+
+g <- ggplot(materialsAlCastAlloys1_long, mapping = aes(x = Element, y = values)) +
+      geom_boxplot() +
+      ggtitle("CastAluminium (1) material composition") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialsAlCastAlloys1_long, mapping = aes(x = Element, y = values)) +
+      geom_boxplot() +
+      ggtitle("CastAluminium (1) material composition") +
+      scale_y_continuous(limits = c(0, 10), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/CastAluminium1.png")
+
+# Determin the compostion
+
+for (i in 1:nrow(castAlDefinition1)) {
+  temp <- materialsAlCastAlloys1 %>% filter(Numerisch == castAlDefinition1$castAlAlloys[i])
+  temp_sum <- temp %>% select(!c(Numerisch, limits)) %>% mutate(Fe = Fe * castAlDefinition1$Fraction[i], Si = Si * castAlDefinition1$Fraction[i], Mn = Mn * castAlDefinition1$Fraction[i],
+                                                            Ni = Ni * castAlDefinition1$Fraction[i], Cr = Cr * castAlDefinition1$Fraction[i], Ti = Ti * castAlDefinition1$Fraction[i],
+                                                            Cu = Cu * castAlDefinition1$Fraction[i], Pb = Pb * castAlDefinition1$Fraction[i], Mg = Mg * castAlDefinition1$Fraction[i],
+                                                            Zn = Zn * castAlDefinition1$Fraction[i], Sn = Sn * castAlDefinition1$Fraction[i], Al = Al * castAlDefinition1$Fraction[i]
+                                                            )
+  
+  if (i == 1) {
+    materialAlCast1compositionSum <- temp_sum
+    materialAlCast1compositionMaximas <- temp
+  }
+  else {
+    materialAlCast1compositionSum <- bind_rows(materialAlCast1compositionSum, temp_sum)
+    materialAlCast1compositionMaximas <- bind_rows(materialAlCast1compositionMaximas, temp)
+  }
+}
+materialAlCast1compositionSum
+materialAlCast1compositionMaximas
+
+# the following equation might need adjustment, if elements are deleted or other elements are added -------------------------------------------------------------------------------------
+materialAlCast1compositionSum <- materialAlCast1compositionSum %>% summarise(Fe = sum(Fe), Si = sum(Si), Mn = sum(Mn), Ni = sum(Ni), Cr = sum(Cr), Ti = sum(Ti), Cu = sum(Cu), Pb = sum(Pb),
+                                                                             Mg = sum(Mg), Zn = sum(Zn), Sn = sum(Sn), Al = sum(Al))
+materialAlCast1compositionMax <- materialAlCast1compositionMaximas %>% summarise(Fe = max(Fe), Si = max(Si), Mn = max(Mn), Ni = max(Ni), Cr = max(Cr), Ti = max(Ti), Cu = max(Cu), Pb = max(Pb),
+                                                                                 Mg = max(Mg), Zn = max(Zn), Sn = max(Sn), Al = max(Al))
+materialAlCast1compositionMin <- materialAlCast1compositionMaximas %>% summarise(Fe = min(Fe), Si = min(Si), Mn = min(Mn), Ni = min(Ni), Cr = min(Cr), Ti = min(Ti), Cu = min(Cu), Pb = min(Pb),
+                                                                                 Mg = min(Mg), Zn = min(Zn), Sn = min(Sn), Al = min(Al))
+
+# Should the Min and Max be changed for the main Element Aluminium
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+materialAlCast1compositionSum <- materialAlCast1compositionSum %>% add_column(limits = "mean")
+materialAlCast1compositionMax <- materialAlCast1compositionMax %>% add_column(limits = "max")
+materialAlCast1compositionMin <- materialAlCast1compositionMin %>% add_column(limits = "min")
+
+materialAlCast1composition <- bind_rows(materialAlCast1compositionSum, materialAlCast1compositionMax)
+materialAlCast1composition <- bind_rows(materialAlCast1composition, materialAlCast1compositionMin)
+
+materialAlCast1composition_long <- materialAlCast1composition %>% pivot_longer(cols = !c(limits), names_to = "Element", values_to = "Content")
+
+# Step 1: Extract rows where 'column_name' is 0
+zero_entries_df <- materialAlCast1composition_long %>% filter(Content == 0 & limits == "mean")
+zero_entries_df
+
+# Step 2: Filter out these entries from the original dataframe
+materialAlCast1composition_long <- materialAlCast1composition_long %>% filter(!(materialAlCast1composition_long$Element) %in% (zero_entries_df$Element))
+
+materialAlCast1composition <- materialAlCast1composition_long
+materialAlCast1composition
+
+g <- ggplot(materialAlCast1composition_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - CastAluminium1") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialAlCast1composition_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - CastAluminium1") +
+      scale_y_continuous(limits = c(0, 13), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/CastAluminium1Vehicle.png")
+
+```
+
+### Cast Aluminium 2
+
+```{r, message=FALSE, warning=FALSE}
+
+materialsAlCastAlloys2Low <- materialsAlCastAlloys2Low %>% add_column(limits = "low")
+materialsAlCastAlloys2High <- materialsAlCastAlloys2High %>% add_column(limits = "high")
+
+materialsAlCastAlloys2 <- bind_rows(materialsAlCastAlloys2Low, materialsAlCastAlloys2High)
+# the following equation might need adjustment, if elements are deleted or other elements are added -------------------------------------------------------------------------------------
+materialsAlCastAlloys2 <- materialsAlCastAlloys2 %>% mutate(Al = 100 - Si - Fe - Cu - Mn - Mg - Cr - Ni - Zn - Mo - Zr - Pb - Sn - Ti - Sr - otherOrUndefinedElements - otherOrUndefinedElements_)
+#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+materialsAlCastAlloys2_long <- materialsAlCastAlloys2 %>% pivot_longer(cols = !c(AlloyGroup, Numerisch, limits), names_to = "Element", values_to = "Content")
+materialsAlCastAlloys2_long <- materialsAlCastAlloys2_long %>% relocate(limits, .after = last_col())
+
+materialsAlCastAlloys2_long_mean <- materialsAlCastAlloys2_long %>% group_by(AlloyGroup, Numerisch, Element) %>% summarise(Content = mean(Content), limits = "mean")
+materialsAlCastAlloys2_long <- bind_rows(materialsAlCastAlloys2_long, materialsAlCastAlloys2_long_mean)
+
+materialsAlCastAlloys2_means <- materialsAlCastAlloys2_long %>% group_by(Element, limits) %>% summarise(mean_values = mean(Content))
+materialsAlCastAlloys2_means <- materialsAlCastAlloys2_means %>% pivot_wider(names_from = Element, values_from = mean_values)
+
+materialsAlCastAlloys2 <- materialsAlCastAlloys2_long %>% pivot_wider(names_from = Element, values_from = Content)
+materialsAlCastAlloys2   # 1
+
+g <- ggplot(materialsAlCastAlloys2_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - CastAluminium2") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialsAlCastAlloys2_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - CastAluminium2") +
+      scale_y_continuous(limits = c(0, 20), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/CastAluminium2.png")
+
+# Determine the composition
+
+for (i in 1:nrow(castAlDefinition2)) {
+  temp <- materialsAlCastAlloys2 %>% filter(Numerisch == castAlDefinition2$castAlAlloys[i])
+  temp_mean <- temp %>% filter(limits == "mean")
+  temp_sum <- temp_mean %>% select(!c(Numerisch, limits)) %>% mutate(Si = Si * castAlDefinition2$Fraction[i], Fe = Fe * castAlDefinition2$Fraction[i],  Cu = Cu * castAlDefinition2$Fraction[i],
+                                                            Mn = Mn * castAlDefinition2$Fraction[i], Mg = Mg * castAlDefinition2$Fraction[i], Cr = Cr * castAlDefinition2$Fraction[i],
+                                                            Ni = Ni * castAlDefinition2$Fraction[i], Zn = Zn * castAlDefinition2$Fraction[i], Mo = Mo * castAlDefinition2$Fraction[i],
+                                                            Zr = Zr * castAlDefinition2$Fraction[i], Pb = Pb * castAlDefinition2$Fraction[i], Sn = Sn * castAlDefinition2$Fraction[i], 
+                                                            Ti = Ti * castAlDefinition2$Fraction[i], Sr = Sr * castAlDefinition2$Fraction[i], otherOrUndefinedElements = otherOrUndefinedElements * castAlDefinition2$Fraction[i],
+                                                            otherOrUndefinedElements_ = otherOrUndefinedElements_ * castAlDefinition2$Fraction[i], Al = Al * castAlDefinition2$Fraction[i]
+                                                            )
+  
+  if (i == 1) {
+    materialAlCast2compositionSum <- temp_sum
+    materialAlCast2compositionMaximas <- temp
+  }
+  else {
+    materialAlCast2compositionSum <- bind_rows(materialAlCast2compositionSum, temp_sum)
+    materialAlCast2compositionMaximas <- bind_rows(materialAlCast2compositionMaximas, temp)
+  }
+}
+materialAlCast2compositionSum  # 2
+materialAlCast2compositionMaximas  # 3
+# the following equation might need adjustment, if elements are deleted or other elements are added -------------------------------------------------------------------------------------
+materialAlCast2compositionSum <- materialAlCast2compositionSum %>% summarise(Si = sum(Si), Fe = sum(Fe), Cu = sum(Cu), Mn = sum(Mn), Mg = sum(Mg), Cr = sum(Cr), Ni = sum(Ni), Zn = sum(Zn), 
+                                                                             Zn = sum(Zn), Mo = sum(Mo), Zr = sum(Zr), Pb = sum(Pb), Sn = sum(Sn), Ti = sum(Ti), Sr = sum(Sr), otherOrUndefinedElements = sum(otherOrUndefinedElements),
+                                                                             otherOrUndefinedElements_ = sum(otherOrUndefinedElements_), Al = sum(Al))
+materialAlCast2compositionSum 
+materialAlCast2compositionMax <- materialAlCast2compositionMaximas %>% summarise(Si = max(Si), Fe = max(Fe), Cu = max(Cu), Mn = max(Mn), Mg = max(Mg), Cr = max(Cr), Ni = max(Ni), Zn = max(Zn), 
+                                                                             Zn = max(Zn), Mo = max(Mo), Zr = max(Zr), Pb = max(Pb), Sn = max(Sn), Ti = max(Ti), Sr = max(Sr), otherOrUndefinedElements = max(otherOrUndefinedElements),
+                                                                             otherOrUndefinedElements_ = max(otherOrUndefinedElements_), Al = max(Al))
+materialAlCast2compositionMin <- materialAlCast2compositionMaximas %>% summarise(Si = min(Si), Fe = min(Fe), Cu = min(Cu), Mn = min(Mn), Mg = min(Mg), Cr = min(Cr), Ni = min(Ni), Zn = min(Zn), 
+                                                                             Zn = min(Zn), Mo = min(Mo), Zr = min(Zr), Pb = min(Pb), Sn = min(Sn), Ti = min(Ti), Sr = min(Sr), otherOrUndefinedElements = min(otherOrUndefinedElements),
+                                                                             otherOrUndefinedElements_ = min(otherOrUndefinedElements_), Al = min(Al))
+# Should the Min and Max be changed for the main Element Aluminium
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+materialAlCast2compositionSum <- materialAlCast2compositionSum %>% add_column(limits = "mean")
+materialAlCast2compositionMax <- materialAlCast2compositionMax %>% add_column(limits = "max")
+materialAlCast2compositionMin <- materialAlCast2compositionMin %>% add_column(limits = "min")
+
+materialAlCast2composition <- bind_rows(materialAlCast2compositionSum, materialAlCast2compositionMax)
+materialAlCast2composition <- bind_rows(materialAlCast2composition, materialAlCast2compositionMin)
+materialAlCast2composition # 5
+
+materialAlCast2composition_long <- materialAlCast2composition %>% pivot_longer(cols = !c(limits), names_to = "Element", values_to = "Content")
+
+# Step 1: Extract rows where 'column_name' is 0
+zero_entries_df <- materialAlCast2composition_long %>% filter(Content == 0 & limits == "mean")
+zero_entries_df
+
+# Step 2: Filter out these entries from the original dataframe
+materialAlCast2composition_long <- materialAlCast2composition_long %>% filter(!(materialAlCast2composition_long$Element) %in% (zero_entries_df$Element))
+
+materialAlCast2composition <- materialAlCast2composition_long
+
+materialAlCast2composition_long <- materialAlCast2composition_long %>%
+  mutate(
+    Element = ifelse(Element == "otherOrUndefinedElements", "other1", Element),  # Replace "elvHEV" with "HEV"
+    Element = ifelse(Element == "otherOrUndefinedElements_", "other2", Element)
+  )
+
+g <- ggplot(materialAlCast2composition_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - CastAluminium2") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialAlCast2composition_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - CastAluminium2") +
+      scale_y_continuous(limits = c(0, 6), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/CastAluminium2Vehicle.png")
+
+```
+
+
+## Wrought Aluminium
+
+### Wrought Aluminium - 1000 series
+
+```{r, message=FALSE, warning=FALSE}
+
+materialsAlWrought1000sLow <- materialsAlWrought1000sLow %>% add_column(limits = "low")
+materialsAlWrought1000sHigh <- materialsAlWrought1000sHigh %>% add_column(limits = "high")
+
+materialsAlWrought1000s <- bind_rows(materialsAlWrought1000sLow, materialsAlWrought1000sHigh)
+materialsAlWrought1000s <- materialsAlWrought1000s %>% mutate(Al = 100 - Si - Fe - Cu - Mg - Mn - Cr - Ni - Zn - Ti - Ga - V - otherOrUndefinedElements - otherOrUndefinedElements_)
+
+materialsAlWrought1000s_long <- materialsAlWrought1000s %>% pivot_longer(cols = !c(Numerisch, limits), names_to = "Element", values_to = "Content")
+materialsAlWrought1000s_long <- materialsAlWrought1000s_long %>% relocate(limits, .after = last_col())
+
+materialsAlWrought1000s_long_mean <- materialsAlWrought1000s_long %>% group_by(Numerisch, Element) %>% summarise(Content = mean(Content), limits = "mean")
+
+materialsAlWrought1000s_long <- bind_rows(materialsAlWrought1000s_long, materialsAlWrought1000s_long_mean)
+materialsAlWrought1000s_long
+
+materialsAlWrought1000s_means <- materialsAlWrought1000s_long %>% group_by(Element, limits) %>% summarise(mean_values = mean(Content))
+materialsAlWrought1000s_means <- materialsAlWrought1000s_means %>% pivot_wider(names_from = Element, values_from = mean_values)
+materialsAlWrought1000s_means
+
+materialsAlWrought1000s <- materialsAlWrought1000s_long %>% pivot_wider(names_from = Element, values_from = Content)
+materialsAlWrought1000s
+
+materialsAlWrought1000s_long <- materialsAlWrought1000s_long %>%
+  mutate(
+    Element = ifelse(Element == "otherOrUndefinedElements", "other1", Element),  # Replace "elvHEV" with "HEV"
+    Element = ifelse(Element == "otherOrUndefinedElements_", "other2", Element)
+  )
+
+g <- ggplot(materialsAlWrought1000s_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Aluminium material composition 1000 series") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialsAlWrought1000s_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Aluminium material composition 1000 series") +
+      scale_y_continuous(limits = c(0,1), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/Aluminium1000series.png")
+
+```
+
+### Wrought Aluminium - 2000 series
+
+```{r, message=FALSE, warning=FALSE}
+
+materialsAlWrought2000sLow <- materialsAlWrought2000sLow %>% add_column(limits = "low")
+materialsAlWrought2000sHigh <- materialsAlWrought2000sHigh %>% add_column(limits = "high")
+
+materialsAlWrought2000s <- bind_rows(materialsAlWrought2000sLow, materialsAlWrought2000sHigh)
+materialsAlWrought2000s <- materialsAlWrought2000s %>% mutate(Al = 100 - Si - Fe - Cu - Mg - Mn - Cr - Ni - Zn - Ti - Ga - V - otherOrUndefinedElements - otherOrUndefinedElements_)
+
+materialsAlWrought2000s_long <- materialsAlWrought2000s %>% pivot_longer(cols = !c(Numerisch, limits), names_to = "Element", values_to = "Content")
+materialsAlWrought2000s_long <- materialsAlWrought2000s_long %>% relocate(limits, .after = last_col())
+
+materialsAlWrought2000s_long_mean <- materialsAlWrought2000s_long %>% group_by(Numerisch, Element) %>% summarise(Content = mean(Content), limits = "mean")
+
+materialsAlWrought2000s_long <- bind_rows(materialsAlWrought2000s_long, materialsAlWrought2000s_long_mean)
+materialsAlWrought2000s_long
+
+materialsAlWrought2000s_means <- materialsAlWrought2000s_long %>% group_by(Element, limits) %>% summarise(mean_values = mean(Content))
+materialsAlWrought2000s_means <- materialsAlWrought2000s_means %>% pivot_wider(names_from = Element, values_from = mean_values)
+materialsAlWrought2000s_means
+
+materialsAlWrought2000s <- materialsAlWrought2000s_long %>% pivot_wider(names_from = Element, values_from = Content)
+materialsAlWrought2000s
+
+
+materialsAlWrought2000s_long <- materialsAlWrought2000s_long %>%
+  mutate(
+    Element = ifelse(Element == "otherOrUndefinedElements", "other1", Element),  # Replace "elvHEV" with "HEV"
+    Element = ifelse(Element == "otherOrUndefinedElements_", "other2", Element)
+  )
+
+
+g <- ggplot(materialsAlWrought2000s_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Aluminium material composition 2000 series") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialsAlWrought2000s_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Aluminium material composition 2000 series") +
+      scale_y_continuous(limits = c(0,8), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/Aluminium2000series.png")
+
+```
+
+
+### Wrought Aluminium - 3000 series
+
+```{r, message=FALSE, warning=FALSE}
+
+materialsAlWrought3000sLow <- materialsAlWrought3000sLow %>% add_column(limits = "low")
+materialsAlWrought3000sHigh <- materialsAlWrought3000sHigh %>% add_column(limits = "high")
+
+materialsAlWrought3000s <- bind_rows(materialsAlWrought3000sLow, materialsAlWrought3000sHigh)
+materialsAlWrought3000s <- materialsAlWrought3000s %>% mutate(Al = 100 - Si - Fe - Cu - Mg - Mn - Cr - Ni - Zn - Ti - Ga - V - otherOrUndefinedElements - otherOrUndefinedElements_)
+
+materialsAlWrought3000s_long <- materialsAlWrought3000s %>% pivot_longer(cols = !c(Numerisch, limits), names_to = "Element", values_to = "Content")
+materialsAlWrought3000s_long <- materialsAlWrought3000s_long %>% relocate(limits, .after = last_col())
+
+materialsAlWrought3000s_long_mean <- materialsAlWrought3000s_long %>% group_by(Numerisch, Element) %>% summarise(Content = mean(Content), limits = "mean")
+
+materialsAlWrought3000s_long <- bind_rows(materialsAlWrought3000s_long, materialsAlWrought3000s_long_mean)
+materialsAlWrought3000s_long
+
+materialsAlWrought3000s_means <- materialsAlWrought3000s_long %>% group_by(Element, limits) %>% summarise(mean_values = mean(Content))
+materialsAlWrought3000s_means <- materialsAlWrought3000s_means %>% pivot_wider(names_from = Element, values_from = mean_values)
+materialsAlWrought3000s_means
+
+materialsAlWrought3000s <- materialsAlWrought3000s_long %>% pivot_wider(names_from = Element, values_from = Content)
+materialsAlWrought3000s
+
+materialsAlWrought3000s_long <- materialsAlWrought3000s_long %>%
+  mutate(
+    Element = ifelse(Element == "otherOrUndefinedElements", "other1", Element),  # Replace "elvHEV" with "HEV"
+    Element = ifelse(Element == "otherOrUndefinedElements_", "other2", Element)
+  )
+
+g <- ggplot(materialsAlWrought3000s_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Aluminium material composition 3000 series") +
+      scale_y_continuous(limits = c(0, 100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialsAlWrought3000s_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Aluminium material composition 3000 series") +
+      scale_y_continuous(limits = c(0, 2), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/Aluminium3000series.png")
+
+```
+
+
+### Wrought Aluminium - 4000 series
+
+```{r, message=FALSE, warning=FALSE}
+
+materialsAlWrought4000sLow <- materialsAlWrought4000sLow %>% add_column(limits = "low")
+materialsAlWrought4000sHigh <- materialsAlWrought4000sHigh %>% add_column(limits = "high")
+
+materialsAlWrought4000s <- bind_rows(materialsAlWrought4000sLow, materialsAlWrought4000sHigh)
+materialsAlWrought4000s <- materialsAlWrought4000s %>% mutate(Al = 100 - Si - Fe - Cu - Mg - Mn - Cr - Ni - Zn - Ti - Ga - V - otherOrUndefinedElements - otherOrUndefinedElements_)
+
+materialsAlWrought4000s_long <- materialsAlWrought4000s %>% pivot_longer(cols = !c(Numerisch, limits), names_to = "Element", values_to = "Content")
+materialsAlWrought4000s_long <- materialsAlWrought4000s_long %>% relocate(limits, .after = last_col())
+
+materialsAlWrought4000s_long_mean <- materialsAlWrought4000s_long %>% group_by(Numerisch, Element) %>% summarise(Content = mean(Content), limits = "mean")
+
+materialsAlWrought4000s_long <- bind_rows(materialsAlWrought4000s_long, materialsAlWrought4000s_long_mean)
+materialsAlWrought4000s_long
+
+materialsAlWrought4000s_means <- materialsAlWrought4000s_long %>% group_by(Element, limits) %>% summarise(mean_values = mean(Content))
+materialsAlWrought4000s_means <- materialsAlWrought4000s_means %>% pivot_wider(names_from = Element, values_from = mean_values)
+materialsAlWrought4000s_means
+
+materialsAlWrought4000s <- materialsAlWrought4000s_long %>% pivot_wider(names_from = Element, values_from = Content)
+materialsAlWrought4000s
+
+materialsAlWrought4000s_long <- materialsAlWrought4000s_long %>%
+  mutate(
+    Element = ifelse(Element == "otherOrUndefinedElements", "other1", Element),  # Replace "elvHEV" with "HEV"
+    Element = ifelse(Element == "otherOrUndefinedElements_", "other2", Element)
+  )
+
+g <- ggplot(materialsAlWrought4000s_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Aluminium material composition 4000 series") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialsAlWrought4000s_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Aluminium material composition 4000 series") +
+      scale_y_continuous(limits = c(0, 15), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/Aluminium4000series.png")
+
+```
+
+
+### Wrought Aluminium - 5000 series
+
+```{r, message=FALSE, warning=FALSE}
+
+materialsAlWrought5000sLow <- materialsAlWrought5000sLow %>% add_column(limits = "low")
+materialsAlWrought5000sHigh <- materialsAlWrought5000sHigh %>% add_column(limits = "high")
+
+materialsAlWrought5000s <- bind_rows(materialsAlWrought5000sLow, materialsAlWrought5000sHigh)
+materialsAlWrought5000s <- materialsAlWrought5000s %>% mutate(Al = 100 - Si - Fe - Cu - Mg - Mn - Cr - Ni - Zn - Ti - Ga - V - otherOrUndefinedElements - otherOrUndefinedElements_)
+
+materialsAlWrought5000s_long <- materialsAlWrought5000s %>% pivot_longer(cols = !c(Numerisch, limits), names_to = "Element", values_to = "Content")
+materialsAlWrought5000s_long <- materialsAlWrought5000s_long %>% relocate(limits, .after = last_col())
+
+materialsAlWrought5000s_long_mean <- materialsAlWrought5000s_long %>% group_by(Numerisch, Element) %>% summarise(Content = mean(Content), limits = "mean")
+
+materialsAlWrought5000s_long <- bind_rows(materialsAlWrought5000s_long, materialsAlWrought5000s_long_mean)
+materialsAlWrought5000s_long
+
+materialsAlWrought5000s_means <- materialsAlWrought5000s_long %>% group_by(Element, limits) %>% summarise(mean_values = mean(Content))
+materialsAlWrought5000s_means <- materialsAlWrought5000s_means %>% pivot_wider(names_from = Element, values_from = mean_values)
+materialsAlWrought5000s_means
+
+materialsAlWrought5000s <- materialsAlWrought5000s_long %>% pivot_wider(names_from = Element, values_from = Content)
+materialsAlWrought5000s
+
+materialsAlWrought5000s_long <- materialsAlWrought5000s_long %>%
+  mutate(
+    Element = ifelse(Element == "otherOrUndefinedElements", "other1", Element),  # Replace "elvHEV" with "HEV"
+    Element = ifelse(Element == "otherOrUndefinedElements_", "other2", Element)
+  )
+
+g <- ggplot(materialsAlWrought5000s_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Aluminium material composition 5000 series") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialsAlWrought5000s_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Aluminium material composition 5000 series") +
+      scale_y_continuous(limits = c(0, 7), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/Aluminium5000series.png")
+
+```
+
+
+### Wrought Aluminium - 6000 series
+
+```{r, message=FALSE, warning=FALSE}
+
+materialsAlWrought6000sLow <- materialsAlWrought6000sLow %>% add_column(limits = "low")
+materialsAlWrought6000sHigh <- materialsAlWrought6000sHigh %>% add_column(limits = "high")
+
+materialsAlWrought6000s <- bind_rows(materialsAlWrought6000sLow, materialsAlWrought6000sHigh)
+materialsAlWrought6000s <- materialsAlWrought6000s %>% mutate(Al = 100 - Si - Fe - Cu - Mg - Mn - Cr - Ni - Zn - Ti - Ga - V - otherOrUndefinedElements - otherOrUndefinedElements_)
+
+materialsAlWrought6000s_long <- materialsAlWrought6000s %>% pivot_longer(cols = !c(Numerisch, limits), names_to = "Element", values_to = "Content")
+materialsAlWrought6000s_long <- materialsAlWrought6000s_long %>% relocate(limits, .after = last_col())
+
+materialsAlWrought6000s_long_mean <- materialsAlWrought6000s_long %>% group_by(Numerisch, Element) %>% summarise(Content = mean(Content), limits = "mean")
+
+materialsAlWrought6000s_long <- bind_rows(materialsAlWrought6000s_long, materialsAlWrought6000s_long_mean)
+materialsAlWrought6000s_long
+
+materialsAlWrought6000s_means <- materialsAlWrought6000s_long %>% group_by(Element, limits) %>% summarise(mean_values = mean(Content))
+materialsAlWrought6000s_means <- materialsAlWrought6000s_means %>% pivot_wider(names_from = Element, values_from = mean_values)
+materialsAlWrought6000s_means
+
+materialsAlWrought6000s <- materialsAlWrought6000s_long %>% pivot_wider(names_from = Element, values_from = Content)
+materialsAlWrought6000s
+
+materialsAlWrought6000s_long <- materialsAlWrought6000s_long %>%
+  mutate(
+    Element = ifelse(Element == "otherOrUndefinedElements", "other1", Element),  # Replace "elvHEV" with "HEV"
+    Element = ifelse(Element == "otherOrUndefinedElements_", "other2", Element)
+  )
+
+g <- ggplot(materialsAlWrought6000s_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Aluminium material composition 6000 series") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialsAlWrought6000s_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Aluminium material composition 6000 series") +
+      scale_y_continuous(limits = c(0, 4), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/Aluminium6000series.png")
+
+## Figure 2 publication
+
+temp <- materialsAlWrought6000s_long
+temp <- temp %>% mutate(Element = case_when(
+            Element == "other1" ~ "Es",
+            Element == "other2" ~ "Et",
+            TRUE ~ Element
+          )
+)
+
+g <- ggplot(temp, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Aluminium Composition of 6000 series Alloy") +
+      scale_y_continuous(limits = c(0, 3.5), name = "content (%)") +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+    text = element_text(size = 12),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12, color = "black"),
+    legend.title = element_text(size = 12, face = "bold"),
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5)
+  )
+plot(g)
+
+ggsave("CompositionMaterials/Figure02.png", g, 
+       width = 8, height = 6, dpi = 300, bg = "white")
+
+```
+
+
+### Wrought Aluminium - 7000 series
+
+```{r, message=FALSE, warning=FALSE}
+
+materialsAlWrought7000sLow <- materialsAlWrought7000sLow %>% add_column(limits = "low")
+materialsAlWrought7000sHigh <- materialsAlWrought7000sHigh %>% add_column(limits = "high")
+
+materialsAlWrought7000s <- bind_rows(materialsAlWrought7000sLow, materialsAlWrought7000sHigh)
+materialsAlWrought7000s <- materialsAlWrought7000s %>% mutate(Al = 100 - Si - Fe - Cu - Mg - Mn - Cr - Ni - Zn - Ti - Ga - V - otherOrUndefinedElements - otherOrUndefinedElements_)
+
+materialsAlWrought7000s_long <- materialsAlWrought7000s %>% pivot_longer(cols = !c(Numerisch, limits), names_to = "Element", values_to = "Content")
+materialsAlWrought7000s_long <- materialsAlWrought7000s_long %>% relocate(limits, .after = last_col())
+
+materialsAlWrought7000s_long_mean <- materialsAlWrought7000s_long %>% group_by(Numerisch, Element) %>% summarise(Content = mean(Content), limits = "mean")
+
+materialsAlWrought7000s_long <- bind_rows(materialsAlWrought7000s_long, materialsAlWrought7000s_long_mean)
+materialsAlWrought7000s_long
+
+materialsAlWrought7000s_means <- materialsAlWrought7000s_long %>% group_by(Element, limits) %>% summarise(mean_values = mean(Content))
+materialsAlWrought7000s_means <- materialsAlWrought7000s_means %>% pivot_wider(names_from = Element, values_from = mean_values)
+materialsAlWrought7000s_means
+
+materialsAlWrought7000s <- materialsAlWrought7000s_long %>% pivot_wider(names_from = Element, values_from = Content)
+materialsAlWrought7000s
+
+materialsAlWrought7000s_long <- materialsAlWrought7000s_long %>%
+  mutate(
+    Element = ifelse(Element == "otherOrUndefinedElements", "other1", Element),  # Replace "elvHEV" with "HEV"
+    Element = ifelse(Element == "otherOrUndefinedElements_", "other2", Element)
+  )
+
+
+g <- ggplot(materialsAlWrought7000s_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Aluminium material composition 7000 series") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialsAlWrought7000s_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Aluminium material composition 7000 series") +
+      scale_y_continuous(limits = c(0, 10), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/Aluminium7000series.png")
+
+```
+
+### Combine all wrought aluminium alloys in on big data.frame
+
+```{r, message=FALSE, warning=FALSE}
+
+materialAlWrought <- bind_rows(materialsAlWrought1000s, materialsAlWrought2000s)
+materialAlWrought <- bind_rows(materialAlWrought, materialsAlWrought3000s)
+materialAlWrought <- bind_rows(materialAlWrought, materialsAlWrought4000s)
+materialAlWrought <- bind_rows(materialAlWrought, materialsAlWrought5000s)
+materialAlWrought <- bind_rows(materialAlWrought, materialsAlWrought6000s)
+materialAlWrought <- bind_rows(materialAlWrought, materialsAlWrought7000s)
+materialAlWrought
+
+```
+
+### Display the mean values of alloys
+
+```{r, message=FALSE, warning=FALSE}
+
+#temp <- materialAlWrought %>% filter(limits == "mean")
+temp <- materialAlWrought
+temp_long <- temp %>% pivot_longer(cols = !c(Numerisch, limits), names_to = "Element", values_to = "Content")
+temp_long
+
+g <- ggplot(data = temp_long, mapping = aes(x = Element, y = Content)) +
+        geom_boxplot() +
+         ggtitle("Aluminium material composition") +
+        scale_y_continuous(limits = c(0, 10), name = "content (%)") +
+        theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+        theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"))
+
+print(g)
+
+ggsave("CompositionMaterials/AluminiumGesamt.png")
+
+```
+
+### Wrought aluminium alloys used for extruding aluminium in car industry
+
+```{r, message=FALSE, warning=FALSE}
+
+for (i in 1:nrow(extrusionAlDefinition)) {
+  temp <- materialAlWrought %>% filter(Numerisch == extrusionAlDefinition$wroughtAlAlloys[i])
+  temp_mean <- temp %>% filter(limits == "mean")
+  temp_sum <- temp_mean %>% select(!c(Numerisch, limits)) %>% mutate(Si = Si * extrusionAlDefinition$Fraction[i], Fe = Fe * extrusionAlDefinition$Fraction[i], Cu = Cu * extrusionAlDefinition$Fraction[i],
+                                                                Mn = Mn * extrusionAlDefinition$Fraction[i], Mg = Mg * extrusionAlDefinition$Fraction[i], Cr = Cr * extrusionAlDefinition$Fraction[i],
+                                                                Ni = Ni * extrusionAlDefinition$Fraction[i], Zn = Zn * extrusionAlDefinition$Fraction[i], Ti = Ti * extrusionAlDefinition$Fraction[i],
+                                                                Ga = Ga * extrusionAlDefinition$Fraction[i], V = V * extrusionAlDefinition$Fraction[i], otherOrUndefinedElements = otherOrUndefinedElements * extrusionAlDefinition$Fraction[i],
+                                                                otherOrUndefinedElements_ = otherOrUndefinedElements_ * extrusionAlDefinition$Fraction[i], Al = Al * extrusionAlDefinition$Fraction[i]
+                                                                )
+ 
+  if (i == 1) {
+    materialAlExtrusioncompositionSum <- temp_sum
+    materialAlExtrusioncompositionMaximas <- temp
+  }
+  else {
+    materialAlExtrusioncompositionSum <- bind_rows(materialAlExtrusioncompositionSum, temp_sum)
+    materialAlExtrusioncompositionMaximas <- bind_rows(materialAlExtrusioncompositionMaximas, temp)
+  }
+}
+materialAlExtrusioncompositionSum
+materialAlExtrusioncompositionMaximas
+
+# the following equation might need adjustment, if elements are deleted or other elements are added -------------------------------------------------------------------------------------
+materialAlExtrusioncompositionSum <- materialAlExtrusioncompositionSum %>% summarise(Si = sum(Si), Fe = sum(Fe), Cu = sum(Cu), Mn = sum(Mn), Mg = sum(Mg), Cr = sum(Cr), Ni = sum(Ni), Zn = sum(Zn),
+                                                                             Ti = sum(Ti), Ga = sum(Ga), V = sum(V),  otherOrUndefinedElements = sum(otherOrUndefinedElements), otherOrUndefinedElements_ = sum(otherOrUndefinedElements_),
+                                                                             Al = sum(Al))
+materialAlExtrusioncompositionMax <- materialAlExtrusioncompositionMaximas %>% summarise(Si = max(Si), Fe = max(Fe), Cu = max(Cu), Mn = max(Mn), Mg = max(Mg), Cr = max(Cr), Ni = max(Ni), Zn = max(Zn),
+                                                                                 Ti = max(Ti), Ga = max(Ga), V = max(V),  otherOrUndefinedElements = max(otherOrUndefinedElements), otherOrUndefinedElements_ = max(otherOrUndefinedElements_),
+                                                                                 Al = max(Al))
+materialAlExtrusioncompositionMin <- materialAlExtrusioncompositionMaximas %>% summarise(Si = min(Si), Fe = min(Fe), Cu = min(Cu), Mn = min(Mn), Mg = min(Mg), Cr = min(Cr), Ni = min(Ni), Zn = min(Zn),
+                                                                                 Ti = min(Ti), Ga = min(Ga), V = min(V),  otherOrUndefinedElements = min(otherOrUndefinedElements), otherOrUndefinedElements_ = min(otherOrUndefinedElements_), Al = min(Al))
+
+# Should the Min and Max be changed for the main Element Aluminium
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+materialAlExtrusioncompositionSum <- materialAlExtrusioncompositionSum %>% add_column(limits = "mean")
+materialAlExtrusioncompositionMax <- materialAlExtrusioncompositionMax %>% add_column(limits = "max")
+materialAlExtrusioncompositionMin <- materialAlExtrusioncompositionMin %>% add_column(limits = "min")
+
+materialAlExtrusioncomposition <- bind_rows(materialAlExtrusioncompositionSum, materialAlExtrusioncompositionMax)
+materialAlExtrusioncomposition <- bind_rows(materialAlExtrusioncomposition, materialAlExtrusioncompositionMin)
+materialAlExtrusioncomposition
+
+#Display the material composition based on the mean, max and min values
+materialAlExtrusioncomposition_long <- materialAlExtrusioncomposition %>% pivot_longer(cols = !c(limits), names_to = "Element", values_to = "Content")
+
+# Step 1: Extract rows where 'column_name' is 0
+zero_entries_df <- materialAlExtrusioncomposition_long %>% filter(Content == 0 & limits == "mean")
+zero_entries_df
+
+# Step 2: Filter out these entries from the original dataframe
+materialAlExtrusioncomposition_long <- materialAlExtrusioncomposition_long %>% filter(!(materialAlExtrusioncomposition_long$Element) %in% (zero_entries_df$Element))
+
+materialAlExtrusioncomposition <- materialAlExtrusioncomposition_long
+materialAlExtrusioncomposition
+
+materialAlExtrusioncomposition_long <- materialAlExtrusioncomposition_long %>%
+  mutate(
+    Element = ifelse(Element == "otherOrUndefinedElements", "other1", Element),  # Replace "elvHEV" with "HEV"
+    Element = ifelse(Element == "otherOrUndefinedElements_", "other2", Element)
+  )
+
+
+g <- ggplot(materialAlExtrusioncomposition_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - Extrusion Aluminium") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialAlExtrusioncomposition_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - Extrusion Aluminium") +
+      scale_y_continuous(limits = c(0, 3), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/AluminiumExtrusionVehicle.png")
+
+```
+
+### Wrought aluminium alloys used for forging aluminium in car industry
+
+```{r, message=FALSE, warning=FALSE}
+
+for (i in 1:nrow(forgingAlDefinition)) {
+  temp <- materialAlWrought %>% filter(Numerisch == forgingAlDefinition$wroughtAlAlloys[i])
+  temp_mean <- temp %>% filter(limits == "mean")
+  temp_sum <- temp_mean %>% select(!c(Numerisch, limits)) %>% mutate(Si = Si * forgingAlDefinition$Fraction[i], Fe = Fe * forgingAlDefinition$Fraction[i], Cu = Cu * forgingAlDefinition$Fraction[i],
+                                                                Mn = Mn * forgingAlDefinition$Fraction[i], Mg = Mg * forgingAlDefinition$Fraction[i], Cr = Cr * forgingAlDefinition$Fraction[i],
+                                                                Ni = Ni * forgingAlDefinition$Fraction[i], Zn = Zn * forgingAlDefinition$Fraction[i], Ti = Ti * forgingAlDefinition$Fraction[i],
+                                                                Ga = Ga * forgingAlDefinition$Fraction[i], V = V * forgingAlDefinition$Fraction[i], otherOrUndefinedElements = otherOrUndefinedElements * forgingAlDefinition$Fraction[i],
+                                                                otherOrUndefinedElements_ = otherOrUndefinedElements_ * forgingAlDefinition$Fraction[i], Al = Al * forgingAlDefinition$Fraction[i]
+                                                                )
+ 
+  if (i == 1) {
+    materialAlForgingcompositionSum <- temp_sum
+    materialAlForgingcompositionMaximas <- temp
+  }
+  else {
+    materialAlForgingcompositionSum <- bind_rows(materialAlForgingcompositionSum, temp_sum)
+    materialAlForgingcompositionMaximas <- bind_rows(materialAlForgingcompositionMaximas, temp)
+  }
+}
+materialAlForgingcompositionSum
+materialAlForgingcompositionMaximas
+
+# the following equation might need adjustment, if elements are deleted or other elements are added -------------------------------------------------------------------------------------
+materialAlForgingcompositionSum <- materialAlForgingcompositionSum %>% summarise(Si = sum(Si), Fe = sum(Fe), Cu = sum(Cu), Mn = sum(Mn), Mg = sum(Mg), Cr = sum(Cr), Ni = sum(Ni), Zn = sum(Zn),
+                                                                             Ti = sum(Ti), Ga = sum(Ga), V = sum(V),  otherOrUndefinedElements = sum(otherOrUndefinedElements), otherOrUndefinedElements_ = sum(otherOrUndefinedElements_),
+                                                                             Al = sum(Al))
+materialAlForgingcompositionMax <- materialAlForgingcompositionMaximas %>% summarise(Si = max(Si), Fe = max(Fe), Cu = max(Cu), Mn = max(Mn), Mg = max(Mg), Cr = max(Cr), Ni = max(Ni), Zn = max(Zn),
+                                                                                 Ti = max(Ti), Ga = max(Ga), V = max(V),  otherOrUndefinedElements = max(otherOrUndefinedElements), otherOrUndefinedElements_ = max(otherOrUndefinedElements_),
+                                                                                 Al = max(Al))
+materialAlForgingcompositionMin <- materialAlForgingcompositionMaximas %>% summarise(Si = min(Si), Fe = min(Fe), Cu = min(Cu), Mn = min(Mn), Mg = min(Mg), Cr = min(Cr), Ni = min(Ni), Zn = min(Zn),
+                                                                                 Ti = min(Ti), Ga = min(Ga), V = min(V),  otherOrUndefinedElements = min(otherOrUndefinedElements), otherOrUndefinedElements_ = min(otherOrUndefinedElements_),
+                                                                                 Al = min(Al))
+
+# Should the Min and Max be changed for the main Element Aluminium
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+materialAlForgingcompositionSum <- materialAlForgingcompositionSum %>% add_column(limits = "mean")
+materialAlForgingcompositionMax <- materialAlForgingcompositionMax %>% add_column(limits = "max")
+materialAlForgingcompositionMin <- materialAlForgingcompositionMin %>% add_column(limits = "min")
+
+materialAlForgingcomposition <- bind_rows(materialAlForgingcompositionSum, materialAlForgingcompositionMax)
+materialAlForgingcomposition <- bind_rows(materialAlForgingcomposition, materialAlForgingcompositionMin)
+materialAlForgingcomposition
+
+#Display the material composition based on the mean, max and min values
+materialAlForgingcomposition_long <- materialAlForgingcomposition %>% pivot_longer(cols = !c(limits), names_to = "Element", values_to = "Content")
+
+# Step 1: Extract rows where 'column_name' is 0
+zero_entries_df <- materialAlForgingcomposition_long %>% filter(Content == 0 & limits == "mean")
+zero_entries_df
+
+# Step 2: Filter out these entries from the original dataframe
+materialAlForgingcomposition_long <- materialAlForgingcomposition_long %>% filter(!(materialAlForgingcomposition_long$Element) %in% (zero_entries_df$Element))
+
+materialAlForgingcomposition <- materialAlForgingcomposition_long
+materialAlForgingcomposition
+
+
+materialAlForgingcomposition_long <- materialAlForgingcomposition_long %>%
+  mutate(
+    Element = ifelse(Element == "otherOrUndefinedElements", "other1", Element),  # Replace "elvHEV" with "HEV"
+    Element = ifelse(Element == "otherOrUndefinedElements_", "other2", Element)
+  )
+
+
+g <- ggplot(materialAlForgingcomposition_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - Forging Aluminium") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialAlForgingcomposition_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - Forging Aluminium") +
+      scale_y_continuous(limits = c(0, 8), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/AluminiumForgingVehicle.png")
+
+```
+
+
+### Wrought aluminium alloys used for sheet aluminium in car industry
+
+```{r, message=FALSE, warning=FALSE}
+
+for (i in 1:nrow(sheetAlDefinition)) {
+  temp <- materialAlWrought %>% filter(Numerisch == sheetAlDefinition$wroughtAlAlloys[i])
+  temp_mean <- temp %>% filter(limits == "mean")
+  temp_sum <- temp_mean %>% select(!c(Numerisch, limits)) %>% mutate(Si = Si * sheetAlDefinition$Fraction[i], Fe = Fe * sheetAlDefinition$Fraction[i], Cu = Cu * sheetAlDefinition$Fraction[i],
+                                                                Mn = Mn * sheetAlDefinition$Fraction[i], Mg = Mg * sheetAlDefinition$Fraction[i], Cr = Cr * sheetAlDefinition$Fraction[i],
+                                                                Ni = Ni * sheetAlDefinition$Fraction[i], Zn = Zn * sheetAlDefinition$Fraction[i], Ti = Ti * sheetAlDefinition$Fraction[i],
+                                                                Ga = Ga * sheetAlDefinition$Fraction[i], V = V * sheetAlDefinition$Fraction[i], otherOrUndefinedElements = otherOrUndefinedElements * sheetAlDefinition$Fraction[i],
+                                                                otherOrUndefinedElements_ = otherOrUndefinedElements_ * sheetAlDefinition$Fraction[i], Al = Al * sheetAlDefinition$Fraction[i]
+                                                                )
+ 
+  if (i == 1) {
+    materialAlSheetcompositionSum <- temp_sum
+    materialAlSheetcompositionMaximas <- temp
+  }
+  else {
+    materialAlSheetcompositionSum <- bind_rows(materialAlSheetcompositionSum, temp_sum)
+    materialAlSheetcompositionMaximas <- bind_rows(materialAlSheetcompositionMaximas, temp)
+  }
+}
+
+# the following equation might need adjustment, if elements are deleted or other elements are added -------------------------------------------------------------------------------------
+materialAlSheetcompositionSum <- materialAlSheetcompositionSum %>% summarise(Si = sum(Si), Fe = sum(Fe), Cu = sum(Cu), Mn = sum(Mn), Mg = sum(Mg), Cr = sum(Cr), Ni = sum(Ni), Zn = sum(Zn),
+                                                                             Ti = sum(Ti), Ga = sum(Ga), V = sum(V),  otherOrUndefinedElements = sum(otherOrUndefinedElements), otherOrUndefinedElements_ = sum(otherOrUndefinedElements_),
+                                                                             Al = sum(Al))
+materialAlSheetcompositionMax <- materialAlSheetcompositionMaximas %>% summarise(Si = max(Si), Fe = max(Fe), Cu = max(Cu), Mn = max(Mn), Mg = max(Mg), Cr = max(Cr), Ni = max(Ni), Zn = max(Zn),
+                                                                                 Ti = max(Ti), Ga = max(Ga), V = max(V),  otherOrUndefinedElements = max(otherOrUndefinedElements), otherOrUndefinedElements_ = max(otherOrUndefinedElements_),
+                                                                                 Al = max(Al))
+materialAlSheetcompositionMin <- materialAlSheetcompositionMaximas %>% summarise(Si = min(Si), Fe = min(Fe), Cu = min(Cu), Mn = min(Mn), Mg = min(Mg), Cr = min(Cr), Ni = min(Ni), Zn = min(Zn),
+                                                                                 Ti = min(Ti), Ga = min(Ga), V = min(V),  otherOrUndefinedElements = min(otherOrUndefinedElements), otherOrUndefinedElements_ = min(otherOrUndefinedElements_), Al = min(Al))
+
+# Should the Min and Max be changed for the main Element Aluminium
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+materialAlSheetcompositionSum <- materialAlSheetcompositionSum %>% add_column(limits = "mean")
+materialAlSheetcompositionMax <- materialAlSheetcompositionMax %>% add_column(limits = "max")
+materialAlSheetcompositionMin <- materialAlSheetcompositionMin %>% add_column(limits = "min")
+
+materialAlSheetcomposition <- bind_rows(materialAlSheetcompositionSum, materialAlSheetcompositionMax)
+materialAlSheetcomposition <- bind_rows(materialAlSheetcomposition, materialAlSheetcompositionMin)
+
+#Display the material composition based on the mean, max and min values
+materialAlSheetcomposition_long <- materialAlSheetcomposition %>% pivot_longer(cols = !c(limits), names_to = "Element", values_to = "Content")
+
+# Step 1: Extract rows where 'column_name' is 0
+zero_entries_df <- materialAlSheetcomposition_long %>% filter(Content == 0 & limits == "mean")
+zero_entries_df
+
+# Step 2: Filter out these entries from the original dataframe
+materialAlSheetcomposition_long <- materialAlSheetcomposition_long %>% filter(!(materialAlSheetcomposition_long$Element) %in% (zero_entries_df$Element))
+
+materialAlSheetcomposition <- materialAlSheetcomposition_long
+materialAlSheetcomposition
+
+materialAlSheetcomposition_long <- materialAlSheetcomposition_long %>%
+  mutate(
+    Element = ifelse(Element == "otherOrUndefinedElements", "other1", Element),  # Replace "elvHEV" with "HEV"
+    Element = ifelse(Element == "otherOrUndefinedElements_", "other2", Element)
+  )
+
+
+g <- ggplot(materialAlSheetcomposition_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - Sheet Aluminium") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialAlSheetcomposition_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - Sheet Aluminium") +
+      scale_y_continuous(limits = c(0, 6), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/AluminiumSheetVehicle.png")
+
+```
+
+### castIron alloys used for castIron in car industry
+
+```{r, message=FALSE, warning=FALSE}
+materialsFeCastIron
+materialsFeCastIron <- materialsFeCastIron %>% mutate(Fe = 100 - C - Si - Mn - Cu - P - S - Cr)
+materialsFeCastIron
+
+materialsFeCastIron_long <- materialsFeCastIron %>% pivot_longer(cols = !c(Alloys, limits), names_to = "Element", values_to = "Content")
+materialsFeCastIron_long <- materialsFeCastIron_long %>% relocate(limits, .after = last_col())
+
+materialsFeCastIron_long_mean <- materialsFeCastIron_long %>% group_by(Alloys, Element) %>% summarise(Content = mean(Content), limits = "mean")
+
+materialsFeCastIron_long <- bind_rows(materialsFeCastIron_long, materialsFeCastIron_long_mean)
+materialsFeCastIron_long
+
+materialsFeCastIron_means <- materialsFeCastIron_long %>% group_by(Element, limits) %>% summarise(mean_values = mean(Content))
+materialsFeCastIron_means <- materialsFeCastIron_means %>% pivot_wider(names_from = Element, values_from = mean_values)
+materialsFeCastIron_means
+
+materialsFeCastIron <- materialsFeCastIron_long %>% pivot_wider(names_from = Element, values_from = Content)
+materialsFeCastIron
+
+g <- ggplot(materialsFeCastIron_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("CastIron") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialsFeCastIron_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("CastIron") +
+      scale_y_continuous(limits = c(0, 5), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/CastIron.png")
+
+```
+
+```{r, message=FALSE, warning=FALSE}
+
+for (i in 1:nrow(castIronDefinition)) {
+  temp <- materialsFeCastIron %>% filter(Alloys == castIronDefinition$castIron[i])
+  temp_mean <- temp %>% filter(limits == "mean")
+  temp_sum <- temp_mean %>% select(!c(Alloys, limits)) %>% mutate(C = C * castIronDefinition$Fraction[i], Si = Si * castIronDefinition$Fraction[i], Mn = Mn * castIronDefinition$Fraction[i],
+                                                             Cu = Cu * castIronDefinition$Fraction[i], P = P * castIronDefinition$Fraction[i], S = S * castIronDefinition$Fraction[i],
+                                                             Cr = Cr * castIronDefinition$Fraction[i], Fe = Fe * castIronDefinition$Fraction[i]
+                                                            )
+ 
+  if (i == 1) {
+    materialsFeCastIroncompositionSum <- temp_sum
+    materialsFeCastIroncompositionMaximas <- temp
+  }
+  else {
+    materialsFeCastIroncompositionSum <- bind_rows(materialsFeCastIroncompositionSum, temp_sum)
+    materialsFeCastIroncompositionMaximas <- bind_rows(materialsFeCastIroncompositionMaximas, temp)
+  }
+}
+
+# the following equation might need adjustment, if elements are deleted or other elements are added -------------------------------------------------------------------------------------
+materialsFeCastIroncompositionSum <- materialsFeCastIroncompositionSum %>% summarise(C = sum(C), Si = sum(Si), Mn = sum(Mn), Cu = sum(Cu), P = sum(P), S = sum(S), Cr = sum(Cr), Fe = sum(Fe))
+materialsFeCastIroncompositionMax <- materialsFeCastIroncompositionMaximas %>% summarise(C = max(C), Si = max(Si), Mn = max(Mn), Cu = max(Cu), P = max(P), S = max(S), Cr = max(Cr), Fe = max(Fe))
+materialsFeCastIroncompositionMin <- materialsFeCastIroncompositionMaximas %>% summarise(C = min(C), Si = min(Si), Mn = min(Mn), Cu = min(Cu), P = min(P), S = min(S), Cr = min(Cr), Fe = min(Fe))
+
+# Should the Min and Max be changed for the main Element Iron (Fe)
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+materialsFeCastIroncompositionSum <- materialsFeCastIroncompositionSum %>% add_column(limits = "mean")
+materialsFeCastIroncompositionMax <- materialsFeCastIroncompositionMax %>% add_column(limits = "max")
+materialsFeCastIroncompositionMin <- materialsFeCastIroncompositionMin %>% add_column(limits = "min")
+
+materialsFeCastIroncomposition <- bind_rows(materialsFeCastIroncompositionSum, materialsFeCastIroncompositionMax)
+materialsFeCastIroncomposition <- bind_rows(materialsFeCastIroncomposition, materialsFeCastIroncompositionMin)
+
+#Display the material composition based on the mean, max and min values
+materialsFeCastIroncomposition_long <- materialsFeCastIroncomposition %>% pivot_longer(cols = !c(limits), names_to = "Element", values_to = "Content")
+
+# Step 1: Extract rows where 'column_name' is 0
+zero_entries_df <- materialsFeCastIroncomposition_long %>% filter(Content == 0 & limits == "mean")
+zero_entries_df
+
+# Step 2: Filter out these entries from the original dataframe
+materialsFeCastIroncomposition_long <- materialsFeCastIroncomposition_long %>% filter(!(materialsFeCastIroncomposition_long$Element) %in% (zero_entries_df$Element))
+
+materialsFeCastIroncomposition <- materialsFeCastIroncomposition_long
+materialsFeCastIroncomposition
+
+g <- ggplot(materialsFeCastIroncomposition_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - CastIron") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialsFeCastIroncomposition_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - CastIron") +
+      scale_y_continuous(limits = c(0, 6), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/CastIronVehicle.png")
+
+```
+
+### mild steel alloys used for mildsteel in car industry
+
+```{r, message=FALSE, warning=FALSE}
+
+materialsFeMildSteel <-materialsFeMildSteel %>% mutate(Fe = 100 - C - Mn - P - S - N - Cu)
+materialsFeMildSteel
+
+materialsFeMildSteel_long <- materialsFeMildSteel %>% pivot_longer(cols = !c(Alloys, limits), names_to = "Element", values_to = "Content")
+materialsFeMildSteel_long <- materialsFeMildSteel_long %>% relocate(limits, .after = last_col())
+
+materialsFeMildSteel_long_mean <- materialsFeMildSteel_long %>% group_by(Alloys, Element) %>% summarise(Content = mean(Content), limits = "mean")
+
+materialsFeMildSteel_long <- bind_rows(materialsFeMildSteel_long, materialsFeMildSteel_long_mean)
+materialsFeMildSteel_long
+
+materialsFeMildSteel_means <- materialsFeMildSteel_long %>% group_by(Element, limits) %>% summarise(mean_values = mean(Content))
+materialsFeMildSteel_means <- materialsFeMildSteel_means %>% pivot_wider(names_from = Element, values_from = mean_values)
+materialsFeMildSteel_means
+
+materialsFeMildSteel <- materialsFeMildSteel_long %>% pivot_wider(names_from = Element, values_from = Content)
+materialsFeMildSteel
+
+g <- ggplot(materialsFeMildSteel_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("MildSteel") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialsFeMildSteel_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("MildSteel") +
+      scale_y_continuous(limits = c(0, 2), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/MildSteel.png")
+
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+
+for (i in 1:nrow(mildSteelDefinition)) {
+  temp <- materialsFeMildSteel %>% filter(Alloys == mildSteelDefinition$mildSteel[i])
+  temp_mean <- temp %>% filter(limits == "mean")
+  temp_sum <- temp_mean %>% select(!c(Alloys, limits)) %>% mutate(C = C * mildSteelDefinition$Fraction[i], Mn = Mn * mildSteelDefinition$Fraction[i], P = P * mildSteelDefinition$Fraction[i],
+                                                            S = S * mildSteelDefinition$Fraction[i], N = N * mildSteelDefinition$Fraction[i], Cu = Cu * mildSteelDefinition$Fraction[i],
+                                                            Fe = Fe * mildSteelDefinition$Fraction[i]
+                                                            )
+ 
+  if (i == 1) {
+    materialsFeMildSteelcompositionSum <- temp_sum
+    materialsFeMildSteelcompositionMaximas <- temp
+  }
+  else {
+    materialsFeMildSteelcompositionSum <- bind_rows(materialsFeMildSteelcompositionSum, temp_sum)
+    materialsFeMildSteelcompositionMaximas <- bind_rows(materialsFeMildSteelcompositionMaximas, temp)
+  }
+}
+
+# the following equation might need adjustment, if elements are deleted or other elements are added -------------------------------------------------------------------------------------
+materialsFeMildSteelcompositionSum <- materialsFeMildSteelcompositionSum %>% summarise(C = sum(C), Mn = sum(Mn), P = sum(P), S = sum(S), N = sum(N), Cu = sum(Cu), Fe = sum(Fe))
+materialsFeMildSteelcompositionMax <- materialsFeMildSteelcompositionMaximas %>% summarise(C = max(C), Mn = max(Mn), P = max(P), S = max(S), N = max(N), Cu = max(Cu), Fe = max(Fe))
+materialsFeMildSteelcompositionMin <- materialsFeMildSteelcompositionMaximas %>% summarise(C = min(C), Mn = min(Mn), P = min(P), S = min(S), N = min(N), Cu = min(Cu), Fe = min(Fe))
+
+# Should the Min and Max be changed for the main Element Iron (Fe)
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+materialsFeMildSteelcompositionSum <- materialsFeMildSteelcompositionSum %>% add_column(limits = "mean")
+materialsFeMildSteelcompositionMax <- materialsFeMildSteelcompositionMax %>% add_column(limits = "max")
+materialsFeMildSteelcompositionMin <- materialsFeMildSteelcompositionMin %>% add_column(limits = "min")
+
+materialsFeMildSteelcomposition <- bind_rows(materialsFeMildSteelcompositionSum, materialsFeMildSteelcompositionMax)
+materialsFeMildSteelcomposition <- bind_rows(materialsFeMildSteelcomposition, materialsFeMildSteelcompositionMin)
+
+#Display the material composition based on the mean, max and min values
+materialsFeMildSteelcomposition_long <- materialsFeMildSteelcomposition %>% pivot_longer(cols = !c(limits), names_to = "Element", values_to = "Content")
+
+# Step 1: Extract rows where 'column_name' is 0
+zero_entries_df <- materialsFeMildSteelcomposition_long %>% filter(Content == 0 & limits == "mean")
+zero_entries_df
+
+# Step 2: Filter out these entries from the original dataframe
+materialsFeMildSteelcomposition_long <- materialsFeMildSteelcomposition_long %>% filter(!(materialsFeMildSteelcomposition_long$Element) %in% (zero_entries_df$Element))
+
+materialsFeMildSteelcomposition <- materialsFeMildSteelcomposition_long
+materialsFeMildSteelcomposition
+
+g <- ggplot(materialsFeMildSteelcomposition_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - Mild Steel") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialsFeMildSteelcomposition_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - Mild Steel") +
+      scale_y_continuous(limits = c(0, 6), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/MildSteelVehicle.png")
+
+```
+
+
+### high strength steel alloys used for HSS in car industry
+
+```{r, message=FALSE, warning=FALSE}
+
+materialsFeHSSteel <-materialsFeHSSteel %>% mutate(Fe = 100 - C - Si - Mn - P - S - Al - Cr_Mo - Ti_Nb - B - Cu - Ti - Nb - V - Cr)
+materialsFeHSSteel
+
+materialsFeHSSteel_long <- materialsFeHSSteel %>% pivot_longer(cols = !c(Alloys, limits, Description), names_to = "Element", values_to = "Content")
+
+g <- ggplot(materialsFeHSSteel_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("High Strength Steel") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialsFeHSSteel_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("High Strength Steell") +
+      scale_y_continuous(limits = c(0, 2.5), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/HSSteel.png")
+
+```
+
+
+
+```{r, message=FALSE, warning=FALSE}
+
+for (i in 1:nrow(HSSteelDefinition)) {
+  temp <- materialsFeHSSteel %>% filter(Alloys == HSSteelDefinition$HSSteel[i])
+  temp_mean <- temp %>% filter(limits == "mean")
+  temp_sum <- temp_mean %>% select(!c(Alloys, limits, Description)) %>% mutate(C = C * HSSteelDefinition$Fraction[i], Si = Si * HSSteelDefinition$Fraction[i], Mn = Mn * HSSteelDefinition$Fraction[i], 
+                                                            P = P * HSSteelDefinition$Fraction[i], S = S * HSSteelDefinition$Fraction[i], Al = Al * HSSteelDefinition$Fraction[i],
+                                                            Cr_Mo = Cr_Mo * HSSteelDefinition$Fraction[i], Ti_Nb = Ti_Nb * HSSteelDefinition$Fraction[i], B = B * HSSteelDefinition$Fraction[i],
+                                                            Cu = Cu * HSSteelDefinition$Fraction[i], Ti = Ti * HSSteelDefinition$Fraction[i], Nb = Nb * HSSteelDefinition$Fraction[i],
+                                                            V = V * HSSteelDefinition$Fraction[i], Cr = Cr * HSSteelDefinition$Fraction[i],
+                                                            Fe = Fe * HSSteelDefinition$Fraction[i]
+                                                            )
+ 
+  if (i == 1) {
+    materialsFeHSSteelcompositionSum <- temp_sum
+  }
+  else {
+    materialsFeHSSteelcompositionSum <- bind_rows(materialsFeHSSteelcompositionSum, temp_sum)
+  }
+}
+
+# the following equation might need adjustment, if elements are deleted or other elements are added -------------------------------------------------------------------------------------
+materialsFeHSSteelcompositionSum <- materialsFeHSSteelcompositionSum %>% summarise(C = sum(C), Si = sum(Si), Mn = sum(Mn), P = sum(P), S = sum(S), Al = sum(Al), Cr_Mo = sum(Cr_Mo), Ti_Nb = sum(Ti_Nb),
+                                                                                   B = sum(B), Cu = sum(Cu), Ti = sum(Ti), Nb = sum(Nb), V = sum(V), Cr = sum(Cr),  Fe = sum(Fe))
+
+# Should the Min and Max be changed for the main Element Iron (Fe)
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+materialsFeHSSteelcompositionSum <- materialsFeHSSteelcompositionSum %>% add_column(limits = "mean")
+
+materialsFeHSSteelcomposition <- materialsFeHSSteelcompositionSum
+
+#Display the material composition based on the mean, max and min values
+materialsFeHSSteelcomposition_long <- materialsFeHSSteelcomposition %>% pivot_longer(cols = !c(limits), names_to = "Element", values_to = "Content")
+
+# Step 1: Extract rows where 'column_name' is 0
+zero_entries_df <- materialsFeHSSteelcomposition_long %>% filter(Content == 0 & limits == "mean")
+zero_entries_df
+
+# Step 2: Filter out these entries from the original dataframe
+materialsFeHSSteelcomposition_long <- materialsFeHSSteelcomposition_long %>% filter(!(materialsFeHSSteelcomposition_long$Element) %in% (zero_entries_df$Element))
+
+materialsFeHSSteelcomposition <- materialsFeHSSteelcomposition_long
+materialsFeHSSteelcomposition
+
+g <- ggplot(materialsFeHSSteelcomposition_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - High Strength Steel") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialsFeHSSteelcomposition_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - High Strength Steel") +
+      scale_y_continuous(limits = c(0, 2.5), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/HSSteelVehicle.png")
+
+```
+
+
+### ultra high strength steel alloys used for UHSS in car industry
+
+```{r, message=FALSE, warning=FALSE}
+
+materialsFeUHSSteel <-materialsFeUHSSteel %>% mutate(Fe = 100 - C - Si - Mn - P - S - Al - Cr_Mo - Ti_Nb - B - Cu - Ti - Nb - V - Cr)
+materialsFeUHSSteel
+
+materialsFeUHSSteel_long <- materialsFeUHSSteel %>% pivot_longer(cols = !c(Alloys, limits, Description), names_to = "Element", values_to = "Content")
+
+g <- ggplot(materialsFeUHSSteel_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Ultra High Strength Steel") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialsFeUHSSteel_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Ultra High Strength Steell") +
+      scale_y_continuous(limits = c(0, 2.5), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/UHSSteel.png")
+
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+
+for (i in 1:nrow(UHSSteelDefinition)) {
+  temp <- materialsFeUHSSteel %>% filter(Alloys == UHSSteelDefinition$UHSSteel[i])
+  temp_mean <- temp %>% filter(limits == "mean")
+  temp_sum <- temp_mean %>% select(!c(Alloys, limits, Description)) %>% mutate(C = C * UHSSteelDefinition$Fraction[i], Si = Si * UHSSteelDefinition$Fraction[i], Mn = Mn * UHSSteelDefinition$Fraction[i], 
+                                                            P = P * UHSSteelDefinition$Fraction[i], S = S * UHSSteelDefinition$Fraction[i], Al = Al * UHSSteelDefinition$Fraction[i],
+                                                            Cr_Mo = Cr_Mo * UHSSteelDefinition$Fraction[i], Ti_Nb = Ti_Nb * UHSSteelDefinition$Fraction[i], B = B * UHSSteelDefinition$Fraction[i],
+                                                            Cu = Cu * UHSSteelDefinition$Fraction[i], Ti = Ti * UHSSteelDefinition$Fraction[i], Nb = Nb * UHSSteelDefinition$Fraction[i],
+                                                            V = V * UHSSteelDefinition$Fraction[i], Cr = Cr * UHSSteelDefinition$Fraction[i],
+                                                            Fe = Fe * UHSSteelDefinition$Fraction[i]
+                                                            )
+ 
+  if (i == 1) {
+    materialsFeUHSSteelcompositionSum <- temp_sum
+  }
+  else {
+    materialsFeUHSSteelcompositionSum <- bind_rows(materialsFeUHSSteelcompositionSum, temp_sum)
+  }
+}
+
+# the following equation might need adjustment, if elements are deleted or other elements are added -------------------------------------------------------------------------------------
+materialsFeUHSSteelcompositionSum <- materialsFeUHSSteelcompositionSum %>% summarise(C = sum(C), Si = sum(Si), Mn = sum(Mn), P = sum(P), S = sum(S), Al = sum(Al), Cr_Mo = sum(Cr_Mo), Ti_Nb = sum(Ti_Nb),
+                                                                                   B = sum(B), Cu = sum(Cu), Ti = sum(Ti), Nb = sum(Nb), V = sum(V), Cr = sum(Cr),  Fe = sum(Fe))
+
+# Should the Min and Max be changed for the main Element Iron (Fe)
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+materialsFeUHSSteelcompositionSum <- materialsFeUHSSteelcompositionSum %>% add_column(limits = "mean")
+
+materialsFeUHSSteelcomposition <- materialsFeUHSSteelcompositionSum
+
+#Display the material composition based on the mean values
+materialsFeUHSSteelcomposition_long <- materialsFeUHSSteelcomposition %>% pivot_longer(cols = !c(limits), names_to = "Element", values_to = "Content")
+
+# Step 1: Extract rows where 'column_name' is 0
+zero_entries_df <- materialsFeUHSSteelcomposition_long %>% filter(Content == 0 & limits == "mean")
+zero_entries_df
+
+# Step 2: Filter out these entries from the original dataframe
+materialsFeUHSSteelcomposition_long <- materialsFeUHSSteelcomposition_long %>% filter(!(materialsFeUHSSteelcomposition_long$Element) %in% (zero_entries_df$Element))
+
+materialsFeUHSSteelcomposition <- materialsFeUHSSteelcomposition_long
+materialsFeUHSSteelcomposition
+
+g <- ggplot(materialsFeUHSSteelcomposition_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - Ultra High Strength Steel") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialsFeUHSSteelcomposition_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - Ultra High Strength Steel") +
+      scale_y_continuous(limits = c(0, 2.5), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/UHSSteelVehicle.png")
+
+```
+
+
+### advanced high strength steel alloys used for AHSS in car industry
+
+```{r, message=FALSE, warning=FALSE}
+
+materialsFeAHSSteel <-materialsFeAHSSteel %>% mutate(Fe = 100 - C - Si - Mn - P - S - Al - Cr_Mo - Ti_Nb - B - Cu - Ti - Nb - V - Cr)
+materialsFeAHSSteel
+
+materialsFeAHSSteel_long <- materialsFeAHSSteel %>% pivot_longer(cols = !c(Alloys, limits, Description), names_to = "Element", values_to = "Content")
+
+g <- ggplot(materialsFeAHSSteel_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Advanced High Strength Steel") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialsFeAHSSteel_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Advanced High Strength Steel") +
+      scale_y_continuous(limits = c(0, 1.5), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/AHSSteel.png")
+
+```
+
+
+
+```{r, message=FALSE, warning=FALSE}
+
+for (i in 1:nrow(AHSSteelDefinition)) {
+  temp <- materialsFeAHSSteel %>% filter(Alloys == AHSSteelDefinition$AHSSteel[i])
+  temp_mean <- temp %>% filter(limits == "mean")
+  temp_sum <- temp_mean %>% select(!c(Alloys, limits, Description)) %>% mutate(C = C * AHSSteelDefinition$Fraction[i], Si = Si * AHSSteelDefinition$Fraction[i], Mn = Mn * AHSSteelDefinition$Fraction[i], 
+                                                            P = P * AHSSteelDefinition$Fraction[i], S = S * AHSSteelDefinition$Fraction[i], Al = Al * AHSSteelDefinition$Fraction[i],
+                                                            Cr_Mo = Cr_Mo * AHSSteelDefinition$Fraction[i], Ti_Nb = Ti_Nb * AHSSteelDefinition$Fraction[i], B = B * AHSSteelDefinition$Fraction[i],
+                                                            Cu = Cu * AHSSteelDefinition$Fraction[i], Ti = Ti * AHSSteelDefinition$Fraction[i], Nb = Nb * AHSSteelDefinition$Fraction[i],
+                                                            V = V * AHSSteelDefinition$Fraction[i], Cr = Cr * AHSSteelDefinition$Fraction[i],
+                                                            Fe = Fe * AHSSteelDefinition$Fraction[i]
+                                                            )
+ 
+  if (i == 1) {
+    materialsFeAHSSteelcompositionSum <- temp_sum
+  }
+  else {
+    materialsFeAHSSteelcompositionSum <- bind_rows(materialsFeAHSSteelcompositionSum, temp_sum)
+  }
+}
+
+# the following equation might need adjustment, if elements are deleted or other elements are added -------------------------------------------------------------------------------------
+materialsFeAHSSteelcompositionSum <- materialsFeAHSSteelcompositionSum %>% summarise(C = sum(C), Si = sum(Si), Mn = sum(Mn), P = sum(P), S = sum(S), Al = sum(Al), Cr_Mo = sum(Cr_Mo), Ti_Nb = sum(Ti_Nb),
+                                                                                   B = sum(B), Cu = sum(Cu), Ti = sum(Ti), Nb = sum(Nb), V = sum(V), Cr = sum(Cr),  Fe = sum(Fe))
+
+# Should the Min and Max be changed for the main Element Iron (Fe)
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+materialsFeAHSSteelcompositionSum <- materialsFeAHSSteelcompositionSum %>% add_column(limits = "mean")
+
+materialsFeAHSSteelcomposition <- materialsFeAHSSteelcompositionSum
+
+#Display the material composition based on the mean values
+materialsFeAHSSteelcomposition_long <- materialsFeAHSSteelcomposition %>% pivot_longer(cols = !c(limits), names_to = "Element", values_to = "Content")
+
+# Step 1: Extract rows where 'column_name' is 0
+zero_entries_df <- materialsFeAHSSteelcomposition_long %>% filter(Content == 0 & limits == "mean")
+zero_entries_df
+
+# Step 2: Filter out these entries from the original dataframe
+materialsFeAHSSteelcomposition_long <- materialsFeAHSSteelcomposition_long %>% filter(!(materialsFeAHSSteelcomposition_long$Element) %in% (zero_entries_df$Element))
+
+materialsFeAHSSteelcomposition <- materialsFeAHSSteelcomposition_long
+materialsFeAHSSteelcomposition
+
+g <- ggplot(materialsFeAHSSteelcomposition_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - Advanced High Strength Steel") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialsFeAHSSteelcomposition_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - Advanced High Strength Steel") +
+      scale_y_continuous(limits = c(0, 1.5), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/AHSSteelVehicle.png")
+
+```
+
+## Magnesium alloys composition
+
+```{r, message=FALSE, warning=FALSE}
+
+materialsMgAlloys
+
+materialsMgAlloys_long <- materialsMgAlloys %>% pivot_longer(cols = !c(Alloys, limits, Description), names_to = "Element", values_to = "Content")
+
+g <- ggplot(materialsMgAlloys_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Magnesium Alloys") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialsMgAlloys_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Magnesium Alloys") +
+      scale_y_continuous(limits = c(0, 9), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/MagnesiumAlloys.png")
+
+```
+
+```{r, message=FALSE, warning=FALSE}
+
+for (i in 1:nrow(magnesiumDefinition)) {
+  temp <- materialsMgAlloys %>% filter(Alloys == magnesiumDefinition$MgAlloys[i])
+  temp_mean <- temp %>% filter(limits == "mean")
+  temp_sum <- temp_mean %>% select(!c(Alloys, limits, Description)) %>% mutate(Al = Al * magnesiumDefinition$Fraction[i], Co = Co * magnesiumDefinition$Fraction[i], Mg = Mg * magnesiumDefinition$Fraction[i], 
+                                                            Mn = Mn * magnesiumDefinition$Fraction[i], Ni = Ni * magnesiumDefinition$Fraction[i], Si = Si * magnesiumDefinition$Fraction[i],
+                                                            Zn = Zn * magnesiumDefinition$Fraction[i]
+                                                            )
+ 
+  if (i == 1) {
+    materialsMgAlloyscompositionSum <- temp_sum
+  }
+  else {
+    materialsMgAlloyscompositionSum <- bind_rows(materialsMgAlloyscompositionSum, temp_sum)
+  }
+}
+
+# the following equation might need adjustment, if elements are deleted or other elements are added -------------------------------------------------------------------------------------
+materialsMgAlloyscompositionSum <- materialsMgAlloyscompositionSum %>% summarise(Al = sum(Al), Co = sum(Co), Mg = sum(Mg), Mn = sum(Mn), Ni = sum(Ni), Si = sum(Si), Zn = sum(Zn))
+
+# Should the Min and Max be changed for the main Element Magnesium (Mg)
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+materialsMgAlloyscompositionSum <- materialsMgAlloyscompositionSum %>% add_column(limits = "mean")
+
+materialsMgAlloyscomposition <- materialsMgAlloyscompositionSum
+
+#Display the material composition based on the mean values
+materialsMgAlloyscomposition_long <- materialsMgAlloyscomposition %>% pivot_longer(cols = !c(limits), names_to = "Element", values_to = "Content")
+
+# Step 1: Extract rows where 'column_name' is 0
+zero_entries_df <- materialsMgAlloyscomposition_long %>% filter(Content == 0 & limits == "mean")
+zero_entries_df
+
+# Step 2: Filter out these entries from the original dataframe
+materialsMgAlloyscompositionn_long <- materialsMgAlloyscomposition_long %>% filter(!(materialsMgAlloyscomposition_long$Element) %in% (zero_entries_df$Element))
+
+materialsMgAlloyscomposition <- materialsMgAlloyscomposition_long
+materialsMgAlloyscomposition
+
+g <- ggplot(materialsMgAlloyscomposition_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - Magnesium Alloys") +
+      scale_y_continuous(limits = c(0,100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+plot(g)
+
+g <- ggplot(materialsMgAlloyscomposition_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - Magnesium Alloys") +
+      scale_y_continuous(limits = c(0, 9), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/magnesiumAlloysVehicle.png")
+
+```
+
+
+## Material composition of PCB of different electronics components
+
+```{r, message=FALSE, warning=FALSE}
+
+materialsElectronicsPCB
+PCBsLightsDefinition
+PCBsActuatorsDefinition
+PCBsControllersDefinition
+PCBsPowerelectronicsDefinition
+
+## PCBsLights
+temp_light <- materialsElectronicsPCB %>% filter(sPCB == "PCBs headlights")
+temp_sum <- temp_light %>% select(!c(sPCB, limits, Description)) %>% mutate(Fe = Fe * PCBsLightsDefinition$Fraction[1], Al = Al * PCBsLightsDefinition$Fraction[1], Cu = Cu * PCBsLightsDefinition$Fraction[1],
+                                                                            Au = Au * PCBsLightsDefinition$Fraction[1], Ag = Ag * PCBsLightsDefinition$Fraction[1], Pd = Pd * PCBsLightsDefinition$Fraction[1])
+materialsPCBsLightscompositionSum <- temp_sum
+
+# the following equation might need adjustment, if elements are deleted or other elements are added -------------------------------------------------------------------------------------
+materialsPCBsLightscompositionSum <- materialsPCBsLightscompositionSum %>% summarise(Fe = sum(Fe), Al = sum(Al), Cu = sum(Cu), Au = sum(Au), Ag = sum(Ag), Pd = sum(Pd))
+
+# Should the Min and Max be changed for the main Element Iron (Fe)
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+materialsPCBsLightscompositionSum <- materialsPCBsLightscompositionSum %>% add_column(limits = "mean")
+
+materialsPCBsLightscomposition <- materialsPCBsLightscompositionSum
+
+#Display the material composition based on the mean values
+materialsPCBsLightscomposition_long <- materialsPCBsLightscomposition %>% pivot_longer(cols = !c(limits), names_to = "Element", values_to = "Content")
+
+# Step 1: Extract rows where 'column_name' is 0
+zero_entries_df <- materialsPCBsLightscomposition_long %>% filter(Content == 0 & limits == "mean")
+zero_entries_df
+
+# Step 2: Filter out these entries from the original dataframe
+materialsPCBsLightscomposition_long <- materialsPCBsLightscomposition_long %>% filter(!(materialsPCBsLightscomposition_long$Element) %in% (zero_entries_df$Element))
+
+materialsPCBsLightscomposition <- materialsPCBsLightscomposition_long
+materialsPCBsLightscomposition
+
+
+## PCBsActuators
+temp_Actuators <- materialsElectronicsPCB %>% filter(sPCB == "PCBs actuators")
+temp_sum <- temp_Actuators %>% select(!c(sPCB, limits, Description)) %>% mutate(Fe = Fe * PCBsActuatorsDefinition$Fraction[1], Al = Al * PCBsActuatorsDefinition$Fraction[1],
+                                                                                Cu = Cu * PCBsActuatorsDefinition$Fraction[1], Au = Au * PCBsActuatorsDefinition$Fraction[1],
+                                                                                Ag = Ag * PCBsActuatorsDefinition$Fraction[1], Pd = Pd * PCBsActuatorsDefinition$Fraction[1])
+materialsPCBsActuatorscompositionSum <- temp_sum
+
+# the following equation might need adjustment, if elements are deleted or other elements are added -------------------------------------------------------------------------------------
+materialsPCBsActuatorscompositionSum <- materialsPCBsActuatorscompositionSum %>% summarise(Fe = sum(Fe), Al = sum(Al), Cu = sum(Cu), Au = sum(Au), Ag = sum(Ag), Pd = sum(Pd))
+
+# Should the Min and Max be changed for the main Element Iron (Fe)
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+materialsPCBsActuatorscompositionSum <- materialsPCBsActuatorscompositionSum %>% add_column(limits = "mean")
+
+materialsPCBsActuatorscomposition <- materialsPCBsActuatorscompositionSum
+
+#Display the material composition based on the mean values
+materialsPCBsActuatorscomposition_long <- materialsPCBsActuatorscomposition %>% pivot_longer(cols = !c(limits), names_to = "Element", values_to = "Content")
+
+# Step 1: Extract rows where 'column_name' is 0
+zero_entries_df <- materialsPCBsActuatorscomposition_long %>% filter(Content == 0 & limits == "mean")
+zero_entries_df
+
+# Step 2: Filter out these entries from the original dataframe
+materialsPCBsActuatorscomposition_long <- materialsPCBsActuatorscomposition_long %>% filter(!(materialsPCBsActuatorscomposition_long$Element) %in% (zero_entries_df$Element))
+
+materialsPCBsActcomposition <- materialsPCBsActuatorscomposition_long
+materialsPCBsActcomposition
+
+
+## PCBsControllers
+temp_Controllers <- materialsElectronicsPCB %>% filter(sPCB == "PCBs controllers")
+temp_sum <- temp_Controllers %>% select(!c(sPCB, limits, Description)) %>% mutate(Fe = Fe * PCBsControllersDefinition$Fraction[1], Al = Al * PCBsControllersDefinition$Fraction[1],
+                                                                                  Cu = Cu * PCBsControllersDefinition$Fraction[1], Au = Au * PCBsControllersDefinition$Fraction[1],
+                                                                                  Ag = Ag * PCBsControllersDefinition$Fraction[1], Pd = Pd * PCBsControllersDefinition$Fraction[1])
+materialsPCBsControllerscompositionSum <- temp_sum
+
+# the following equation might need adjustment, if elements are deleted or other elements are added -------------------------------------------------------------------------------------
+materialsPCBsControllerscompositionSum <- materialsPCBsControllerscompositionSum %>% summarise(Fe = sum(Fe), Al = sum(Al), Cu = sum(Cu), Au = sum(Au), Ag = sum(Ag), Pd = sum(Pd))
+
+# Should the Min and Max be changed for the main Element Iron (Fe)
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+materialsPCBsControllerscompositionSum <- materialsPCBsControllerscompositionSum %>% add_column(limits = "mean")
+
+materialsPCBsControllerscomposition <- materialsPCBsControllerscompositionSum
+
+#Display the material composition based on the mean values
+materialsPCBsControllerscomposition_long <- materialsPCBsControllerscomposition %>% pivot_longer(cols = !c(limits), names_to = "Element", values_to = "Content")
+
+# Step 1: Extract rows where 'column_name' is 0
+zero_entries_df <- materialsPCBsControllerscomposition_long %>% filter(Content == 0 & limits == "mean")
+zero_entries_df
+
+# Step 2: Filter out these entries from the original dataframe
+materialsPCBsControllerscomposition_long <- materialsPCBsControllerscomposition_long %>% filter(!(materialsPCBsControllerscomposition_long$Element) %in% (zero_entries_df$Element))
+
+materialsPCBsContcomposition <- materialsPCBsControllerscomposition_long
+materialsPCBsContcomposition
+
+
+## PCBsPowerelectronicsDefinition
+temp_Powerelectronics <- materialsElectronicsPCB %>% filter(sPCB == "PCBs powerelectronics")
+temp_sum <- temp_Powerelectronics %>% select(!c(sPCB, limits, Description)) %>% mutate(Fe = Fe * PCBsPowerelectronicsDefinition$Fraction[1], Al = Al * PCBsPowerelectronicsDefinition$Fraction[1],
+                                                                                  Cu = Cu * PCBsPowerelectronicsDefinition$Fraction[1], Au = Au * PCBsPowerelectronicsDefinition$Fraction[1],
+                                                                                  Ag = Ag * PCBsPowerelectronicsDefinition$Fraction[1], Pd = Pd * PCBsPowerelectronicsDefinition$Fraction[1])
+materialsPCBsPowerelectronicscompositionSum <- temp_sum
+
+# the following equation might need adjustment, if elements are deleted or other elements are added -------------------------------------------------------------------------------------
+materialsPCBsPowerelectronicscompositionSum <- materialsPCBsPowerelectronicscompositionSum %>% summarise(Fe = sum(Fe), Al = sum(Al), Cu = sum(Cu), Au = sum(Au), Ag = sum(Ag), Pd = sum(Pd))
+
+# Should the Min and Max be changed for the main Element Iron (Fe)
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+materialsPCBsPowerelectronicscompositionSum <- materialsPCBsPowerelectronicscompositionSum %>% add_column(limits = "mean")
+
+materialsPCBsPowerelectronicscomposition <- materialsPCBsPowerelectronicscompositionSum
+
+#Display the material composition based on the mean values
+materialsPCBsPowerelectronicscomposition_long <- materialsPCBsPowerelectronicscomposition %>% pivot_longer(cols = !c(limits), names_to = "Element", values_to = "Content")
+
+# Step 1: Extract rows where 'column_name' is 0
+zero_entries_df <- materialsPCBsPowerelectronicscomposition_long %>% filter(Content == 0 & limits == "mean")
+zero_entries_df
+
+# Step 2: Filter out these entries from the original dataframe
+materialsPCBsPowerelectronicscomposition_long <- materialsPCBsPowerelectronicscomposition_long %>% filter(!(materialsPCBsPowerelectronicscomposition_long$Element) %in% (zero_entries_df$Element))
+
+materialsPCBsPowerelcomposition <- materialsPCBsPowerelectronicscomposition_long
+materialsPCBsPowerelcomposition
+
+```
+
+## Material composition of cables used for different purposes in a vehicle
+
+```{r, message=FALSE, warning=FALSE}
+
+materialsCable
+CableInsulatedDefinition
+CableEngineDefinition
+
+## cableInsulated
+temp_cableInsulated <- materialsCable %>% filter(Alloys == "CableInsulated")
+temp_sum <- temp_cableInsulated %>% select(!c(Alloys, limits, Description)) %>% mutate(Cu = Cu * CableInsulatedDefinition$Fraction[1])
+materialscableInsulatedcompositionSum <- temp_sum
+
+# Should the Min and Max be changed for the main Element Iron (Fe)
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+materialscableInsulatedcompositionSum <- materialscableInsulatedcompositionSum %>% add_column(limits = "mean")
+materialscableInsulatedcomposition <- materialscableInsulatedcompositionSum
+
+#Display the material composition based on the mean values
+materialscableInsulatedcomposition_long <- materialscableInsulatedcomposition %>% pivot_longer(cols = !c(limits), names_to = "Element", values_to = "Content")
+
+# Step 1: Extract rows where 'column_name' is 0
+zero_entries_df <- materialscableInsulatedcomposition_long %>% filter(Content == 0 & limits == "mean")
+zero_entries_df
+
+# Step 2: Filter out these entries from the original dataframe
+materialscableInsulatedcomposition_long <- materialscableInsulatedcomposition_long %>% filter(!(materialscableInsulatedcomposition_long$Element) %in% (zero_entries_df$Element))
+
+materialscableInscomposition <- materialscableInsulatedcomposition_long
+
+# Remove Rest from the data frame
+materialscableInscomposition <- materialscableInscomposition[-2, ]
+materialscableInscomposition
+
+## cableEngine
+temp_cableEngine <- materialsCable %>% filter(Alloys == "CableEngine")
+temp_sum <- temp_cableEngine %>% select(!c(Alloys, limits, Description)) %>% mutate(Cu = Cu * CableEngineDefinition$Fraction[1])
+materialscableEnginecompositionSum <- temp_sum
+
+# Should the Min and Max be changed for the main Element Iron (Fe)
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+materialscableEnginecompositionSum <- materialscableEnginecompositionSum %>% add_column(limits = "mean")
+materialscableEnginecomposition <- materialscableEnginecompositionSum
+
+#Display the material composition based on the mean values
+materialscableEnginecomposition_long <- materialscableEnginecomposition %>% pivot_longer(cols = !c(limits), names_to = "Element", values_to = "Content")
+
+# Step 1: Extract rows where 'column_name' is 0
+zero_entries_df <- materialscableEnginecomposition_long %>% filter(Content == 0 & limits == "mean")
+zero_entries_df
+
+# Step 2: Filter out these entries from the original dataframe
+materialscableEnginecomposition_long <- materialscableEnginecomposition_long %>% filter(!(materialscableEnginecomposition_long$Element) %in% (zero_entries_df$Element))
+
+materialscableEngcomposition <- materialscableEnginecomposition_long
+
+# Remove Rest from the data.frame
+materialscableEngcomposition <- materialscableEngcomposition[-2, ]
+materialscableEngcomposition
+
+```
+
+## Material composition of permanent magnets for electric motors in a vehicle
+
+```{r, message=FALSE, warning=FALSE}
+
+materialsPermanentMagnet
+
+materialsPermanentMagnet_long <- materialsPermanentMagnet %>% pivot_longer(cols = !c(Alloys, limits), names_to = "Element", values_to = "Content")
+materialsPermanentMagnet_long <- materialsPermanentMagnet_long %>% relocate(limits, .after = last_col())
+
+materialsPermanentMagnet_long_mean <- materialsPermanentMagnet_long %>% group_by(Alloys, Element) %>% summarise(Content = mean(Content), limits = "mean")
+materialsPermanentMagnet_long <- bind_rows(materialsPermanentMagnet_long, materialsPermanentMagnet_long_mean) %>% distinct()
+
+materialsPermanentMagnet_means <- materialsPermanentMagnet_long %>% group_by(Element, limits) %>% summarise(mean_values = mean(Content))
+materialsPermanentMagnet_means <- materialsPermanentMagnet_means %>% pivot_wider(names_from = Element, values_from = mean_values)
+
+materialsPermanentMagnet <- materialsPermanentMagnet_long %>% pivot_wider(names_from = Element, values_from = Content)
+materialsPermanentMagnet
+
+g <- ggplot(materialsPermanentMagnet_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Permanent Magnets") +
+      scale_y_continuous(limits = c(0, 1), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/PermanentMagnet.png")
+
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+
+for (i in 1:nrow(PermanentMagnetDefinition)) {
+  print(i)
+  temp <- materialsPermanentMagnet %>% filter(Alloys == PermanentMagnetDefinition$PermenentMagnets[i])
+  temp_mean <- temp %>% filter(limits == "mean")
+  temp_sum <- temp_mean %>% select(!c(Alloys, limits)) %>% mutate(Nd = Nd * PermanentMagnetDefinition$Fraction[i], Fe = Fe * PermanentMagnetDefinition$Fraction[i], B = B * PermanentMagnetDefinition$Fraction[i],
+                                                                  Tb = Tb * PermanentMagnetDefinition$Fraction[i], Al = Al * PermanentMagnetDefinition$Fraction[i], Nb = Nb * PermanentMagnetDefinition$Fraction[i],
+                                                                  Pr = Pr * PermanentMagnetDefinition$Fraction[i], C = C * PermanentMagnetDefinition$Fraction[i], Cr = Cr * PermanentMagnetDefinition$Fraction[i],
+                                                                  Ni = Ni * PermanentMagnetDefinition$Fraction[i], Co = Co * PermanentMagnetDefinition$Fraction[i], Dy = Dy * PermanentMagnetDefinition$Fraction[i])
+ 
+  if (i == 1) {
+    materialsPermanentMagnetcompositionSum <- temp_sum
+    materialsPermanentMagnetcompositionMaximas <- temp
+  }
+  else {
+    materialsPermanentMagnetcompositionSum <- bind_rows(materialsPermanentMagnetcompositionSum, temp_sum)
+    materialsPermanentMagnetcompositionMaximas <- bind_rows(materialsPermanentMagnetcompositionMaximas, temp)
+  }
+}
+
+# the following equation might need adjustment, if elements are deleted or other elements are added -------------------------------------------------------------------------------------
+materialsPermanentMagnetcompositionSum <- materialsPermanentMagnetcompositionSum %>% summarise(Nd = sum(Nd), Fe = sum(Fe), B = sum(B), Tb = sum(Tb), Al = sum(Al), Nb = sum(Nb), Pr = sum(Pr),
+                                                                                                 C = sum(C), Cr = sum(Cr), Ni = sum(Ni), Co = sum(Co), Dy = sum(Dy))
+materialsPermanentMagnetcompositionMax <- materialsPermanentMagnetcompositionMaximas %>% summarise(Nd = max(Nd), Fe = max(Fe), B = max(B), Tb = max(Tb), Al = max(Al), Nb = max(Nb), Pr = max(Pr),
+                                                                                                 C = max(C), Cr = max(Cr), Ni = max(Ni), Co = max(Co), Dy = max(Dy))
+materialsPermanentMagnetcompositionMin <- materialsPermanentMagnetcompositionMaximas %>% summarise(Nd = min(Nd), Fe = min(Fe), B = min(B), Tb = min(Tb), Al = min(Al), Nb = min(Nb), Pr = min(Pr),
+                                                                                                 C = min(C), Cr = min(Cr), Ni = min(Ni), Co = min(Co), Dy = min(Dy))
+
+# Should the Min and Max be changed for the main Element Iron (Fe)
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+materialsPermanentMagnetcompositionSum <- materialsPermanentMagnetcompositionSum %>% add_column(limits = "mean")
+materialsPermanentMagnetcompositionMax <- materialsPermanentMagnetcompositionMax %>% add_column(limits = "max")
+materialsPermanentMagnetcompositionMin <- materialsPermanentMagnetcompositionMin %>% add_column(limits = "min")
+
+materialsPermanentMagnetcomposition <- bind_rows(materialsPermanentMagnetcompositionSum, materialsPermanentMagnetcompositionMax)
+materialsPermanentMagnetcomposition <- bind_rows(materialsPermanentMagnetcomposition, materialsPermanentMagnetcompositionMin)
+materialsPermanentMagnetcomposition
+
+#Display the material composition based on the mean, max and min values
+materialsPermanentMagnetcomposition_long <- materialsPermanentMagnetcomposition %>% pivot_longer(cols = !c(limits), names_to = "Element", values_to = "Content")
+
+# Step 1: Extract rows where 'column_name' is 0
+zero_entries_df <- materialsPermanentMagnetcomposition_long %>% filter(Content == 0 & limits == "mean")
+zero_entries_df
+
+# Step 2: Filter out these entries from the original dataframe
+materialsPermanentMagnetcomposition_long <- materialsPermanentMagnetcomposition_long %>% filter(!(materialsPermanentMagnetcomposition_long$Element) %in% (zero_entries_df$Element))
+
+materialsPerMagnetcomposition <- materialsPermanentMagnetcomposition_long
+
+g <- ggplot(materialsPermanentMagnetcomposition_long, mapping = aes(x = Element, y = Content)) +
+      geom_boxplot() +
+      ggtitle("Material composition - Permanent Magnets") +
+      scale_y_continuous(limits = c(0, 100), name = "content (%)") +
+      theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+      theme(axis.text=element_text(size=12),
+      axis.title=element_text(size=14,face="bold"))
+
+plot(g)
+
+ggsave("CompositionMaterials/PermanentMagnetEV.png")
+
+```
+
+## HEV and PHEV generator elemental composition are at the moment identical to the elemental composition of the electric motor
+
+```{r, message=FALSE, warning=FALSE}
+
+materialscableGencomposition <- materialscableEngcomposition
+materialsGenPerMagcomposition <- materialsPerMagnetcomposition
+
+```
+
+## Write all the data.frames to different sheets of the output excel sheet
+
+```{r, message=FALSE, warning=FALSE}
+
+# write to excel sheet using perl
+WriteXLS(c("materialAlCast1composition", "materialAlCast2composition", "materialAlExtrusioncomposition", "materialAlForgingcomposition", "materialAlSheetcomposition", "materialsFeCastIroncomposition",
+           "materialsFeMildSteelcomposition", "materialsFeHSSteelcomposition", "materialsFeUHSSteelcomposition", "materialsFeAHSSteelcomposition", "materialsMgAlloyscomposition", 
+           "materialsPCBsLightscomposition", "materialsPCBsActcomposition", "materialsPCBsContcomposition", "materialsPCBsPowerelcomposition", "materialscableInscomposition", "materialscableEngcomposition",
+           "materialsPerMagnetcomposition", "materialscableGencomposition", "materialsGenPerMagcomposition"), ExcelFileName = filename22)
+
+```
+

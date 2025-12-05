@@ -1,0 +1,793 @@
+---
+title: "Generate data for vehicle component family and component composition based on different data sources"
+author: "Matthias Roesslein - Empa"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+tags: [FutuRaM, Empa, vehicles, car, van, Al, Fe, Mg]
+abstract: |
+  Calculate for given data the standard composition of vehicle component and their different car segments (a, b, c etc.). It is first done for aluminium alloys (Al), iron/steel alloys (Fe)
+ 
+version: 1.5 
+fontsize: 11pt
+output:
+  pdf_document: default
+    df_print: paged
+---
+
+**Copyright notice:** Copyright © 2024 Empa, Matthias Roesslein
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code.
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*.
+
+------------------------------------------------------------------------
+
+## Loading of the libraries
+
+We are using tidyverse framework to rearrange and analysis the data.
+
+```{r, message=FALSE, warning=FALSE}
+# load libraries
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(stringr)
+library(ggplot2)
+library(scales)
+library(forcats)
+
+library(openxlsx) # test this library. It should work without Java
+library(readxl) # read excel files
+library(WriteXLS) # uses Perl and not Java - Java has a licence issue and should not be used at Empa 
+```
+
+```{r, message=FALSE, warning=FALSE}
+tidyverse_conflicts()
+```
+
+## Define the files names of the input excel file
+
+```{r, message=FALSE, warning=FALSE}
+
+filename2_input <- "Data/2_VehicleCompositionNewData.xlsx"
+filename23_input <- "Data/23_CompositionDataUpdated.xlsx"
+filename31_input <- "Data/31_ComponentMaterial.xlsx"
+
+```
+
+## Define the file name of the output excel file
+
+```{r, message=FALSE, warning=FALSE}
+
+filename35_output <- "Data/35_VehicleComponentData.xlsx"
+
+```
+
+## Load all the sheets of the the component family composotion (% total weigt & % material composition)
+
+```{r, message=FALSE, warning=FALSE}
+
+productKeys <- read_excel(filename2_input, sheet = "ProductKeys")
+vehicleWeight <- read_excel(filename2_input, sheet = "totalWeight")
+
+composition <- read_excel(filename23_input, sheet = "FutuRaM-ELV")
+
+componentCarRatio <- read_excel(filename31_input, sheet = "componentCarRatio")
+componentCarSegmentInput <- read_excel(filename31_input, sheet = "componentCarSegment")
+componentAluminium <- read_excel(filename31_input, sheet = "componentAluminium")
+componentSteel <- read_excel(filename31_input, sheet = "componentSteel")
+componentMagnesium <- read_excel(filename31_input, sheet = "componentMagnesium")
+
+```
+
+## Calculate the mean component ratio for the different car segments and materials
+
+```{r, message=FALSE, warning=FALSE}
+# calculate the mean 
+componentCarSegment <- componentCarSegmentInput %>% group_by(components, segment, year) %>% summarise(meanAluminium = mean(aluminium, na.rm = TRUE), meanSteel = mean(steel, na.rm = TRUE))
+componentCarSegment
+
+# Calculate the ratio of the components by segment and material
+componentCarSegment <- componentCarSegment %>% left_join(componentAluminium, by = c("components")) %>% mutate(Al_5xxx = Al_5xxx * meanAluminium, Al_6xxx = Al_6xxx * meanAluminium,
+                                                                                                                          Al_7xxx = Al_7xxx * meanAluminium, castAluminiumAlSiCu = castAluminiumAlSiCu * meanAluminium,
+                                                                                                                          castAluminiumAlSiMg = castAluminiumAlSiMg * meanAluminium) %>% select(-meanAluminium)
+componentCarSegment
+
+# Calculate the ratio of the components by segment and material
+componentCarSegment <- componentCarSegment %>%
+                          left_join(componentSteel, by = c("components")) %>%
+                          mutate(mildSteel = mildSteel * meanSteel, HSS = HSS * meanSteel, AHSS = AHSS * meanSteel, UHSS = UHSS * meanSteel,
+                                castIron = castIron * meanSteel, stainlessSteel = stainlessSteel * meanSteel, AHSS_DualPhase = AHSS_DualPhase * meanSteel,
+                                alloySteel = alloySteel * meanSteel, Others = Others * meanSteel) %>% select(-meanSteel)
+
+componentCarSegment
+
+componentCarSegment <- componentCarSegment %>%
+                          left_join(componentMagnesium, by = c("components", "segment", "year")) %>% 
+                          rowwise() %>%
+                          mutate(reduction_factor = 1 - magnesium,  # Calculate the remaining ratio for the first 5 columns
+                                 across(Al_5xxx:castAluminiumAlSiMg, ~ .x * reduction_factor) # Scale down the first 5 columns
+                                ) %>%
+                          ungroup() %>% # Return to the default ungrouped state for further operations
+                          select(-reduction_factor)
+
+# calculate the standard segment
+componentCarSegment_standard <- componentCarSegment %>% filter(segment == "C" | segment == "D")
+componentCarSegment_standard <- componentCarSegment_standard %>% group_by(components, year) %>% summarise(Al_5xxx = mean(Al_5xxx), Al_6xxx = mean(Al_6xxx), Al_7xxx = mean(Al_7xxx), castAluminiumAlSiCu = mean(castAluminiumAlSiCu), 
+                                                                                                    castAluminiumAlSiMg = mean(castAluminiumAlSiMg), mildSteel = mean(mildSteel), HSS = mean(HSS), AHSS = mean(AHSS), UHSS = mean(UHSS),
+                                                                                                    castIron = mean(castIron), stainlessSteel = mean(stainlessSteel), AHSS_DualPhase = mean(AHSS_DualPhase), alloySteel = mean(alloySteel),
+                                                                                                    Others = mean(Others), magnesium = mean(magnesium), segment = "standard")
+componentCarSegment_standard
+
+componentCarSegment <- bind_rows(componentCarSegment, componentCarSegment_standard)
+componentCarSegment
+
+```
+
+## Calculate the weight of the differt Magnesium components to obtain the total amount of Magnesium
+
+```{r, message=FALSE, warning=FALSE}
+
+componentCarRatio <- componentCarRatio %>% select(-sum)
+
+# Add the SUV (J) part, which is identical with the respective sedan segment component weight ratio
+componentCarRatio_J <- componentCarRatio %>% mutate(segment = recode(segment, "A" = "JA", "B" = "JB", "C" = "JC", "D" = "JD", "E" = "JE", "F" = "JF"))
+componentCarRatio <- bind_rows(componentCarRatio, componentCarRatio_J)
+
+# calculate the standard segment
+componentCarRatio_standard <- componentCarRatio %>% filter(segment == "C" | segment == "D")
+componentCarRatio_standard <- componentCarRatio_standard %>% group_by(components) %>% summarise(ratio = mean(ratio), segment = "standard")
+componentCarRatio <- bind_rows(componentCarRatio, componentCarRatio_standard)
+componentCarRatio
+
+vehicleWeight_long <- vehicleWeight %>% pivot_longer(cols = -c(segment), names_to = "productKeyLevel1", values_to = "weight")
+
+vehicleWeight_long.Petrol <- vehicleWeight_long %>% filter(productKeyLevel1 == "elvPetrol")
+
+vehicleWeightRatio_long.Petrol <- componentCarRatio %>% left_join(vehicleWeight_long.Petrol, by = "segment") %>% mutate(weightratio = ratio * weight)
+
+vehicleWeightRatio_long.Petrol
+```
+
+## Prepare componentCarSegment for the combination with vehicleWeight and combine them
+
+```{r, message=FALSE, warning=FALSE}
+
+componentCarRatio <- componentCarRatio %>% left_join(componentCarSegment, by = c("components", "segment"))
+
+componentCarSegementWeight.Petrol <- componentCarSegment %>%
+                                            left_join(vehicleWeightRatio_long.Petrol, by = c("segment", "components")) %>% 
+                                              mutate(calAl_5xxx = Al_5xxx * weightratio, calAl_6xxx = Al_6xxx * weightratio, calAl_7xxx = Al_7xxx * weightratio, calcastAluminiumAlSiCu = castAluminiumAlSiCu * weightratio,
+                                                     calcastAluminiumAlSiMg = castAluminiumAlSiMg * weightratio, calmildSteel = mildSteel * weightratio, calHSS = HSS * weightratio, calAHSS = AHSS * weightratio,
+                                                     calUHSS = UHSS * weightratio, calcastIron = castIron * weightratio, calstainlessSteel = stainlessSteel * weightratio, calAHSS_DualPhase = AHSS_DualPhase * weightratio,
+                                                     calalloySteel = alloySteel * weightratio, calOthers = Others * weightratio, calMagnesium = magnesium * weightratio) %>%
+                                                select(-Al_5xxx, -Al_6xxx, -Al_7xxx, -castAluminiumAlSiCu, -castAluminiumAlSiMg, -mildSteel, -HSS, -AHSS, -UHSS, -castIron, -stainlessSteel, -AHSS_DualPhase,
+                                                      -alloySteel, -Others, -magnesium, -productKeyLevel1)
+componentCarSegementWeight.Petrol <- componentCarSegementWeight.Petrol %>% mutate(total = calAl_5xxx + calAl_6xxx + calAl_7xxx + calcastAluminiumAlSiCu + calcastAluminiumAlSiMg + calmildSteel + calHSS + calAHSS + calUHSS +
+                                                                                              calcastIron + calstainlessSteel + calAHSS_DualPhase + calalloySteel + calOthers + calMagnesium,
+                                                                                            totalAl = calAl_5xxx + calAl_6xxx + calAl_7xxx + calcastAluminiumAlSiCu + calcastAluminiumAlSiMg,
+                                                                                            totalIronSteel = calmildSteel + calHSS + calAHSS + calUHSS + calcastIron + calstainlessSteel + calAHSS_DualPhase + calalloySteel + calOthers)
+
+componentCar.Petrol <- componentCarSegementWeight.Petrol
+componentCar.Petrol
+```
+
+## Prepapre the table in such a way that it can be shared with outside organisations
+
+```{r, message=FALSE, warning=FALSE}
+
+# Remove columns, which are not needed
+VDACarCompontents <- componentCar.Petrol %>% select(-ratio)
+
+# Get the order right: Move total to the end
+VDACarCompontents <- VDACarCompontents %>% relocate(totalAl, .after = calcastAluminiumAlSiMg)
+VDACarCompontents <- VDACarCompontents %>% relocate(total, .after = last_col())
+
+# Name the different columns correctly
+VDACarCompontents <- VDACarCompontents %>% rename("component" = "components",
+                                                  "weight of car" = "weight",
+                                                  "component share of weight" = "weightratio",
+                                                  "Al 5xxx" = "calAl_5xxx",
+                                                  "Al 6xxx" = "calAl_6xxx",
+                                                  "Al 7xxx" = "calAl_7xxx",
+                                                  "castAluminium (AlSiCu)" = "calcastAluminiumAlSiCu",
+                                                  "castAluminium (AlSiMg)" = "calcastAluminiumAlSiMg",
+                                                  "total share of Al" = "totalAl",
+                                                  "mild Steel" = "calmildSteel",
+                                                  "HSS" = "calHSS",
+                                                  "AHSS" = "calAHSS",
+                                                  "UHSS" = "calUHSS",
+                                                  "cast Iron" = "calcastIron",
+                                                  "stainless Steel" = "calstainlessSteel",
+                                                  "AHSS (DualPhase)" = "calAHSS_DualPhase",
+                                                  "alloy Steel" = "calalloySteel",
+                                                  "Others" = "calOthers",
+                                                  "Magnesium" = "calMagnesium",
+                                                  "total share of Iron & Steel" = "totalIronSteel",
+                                                  "total amount of Al, Iron & Steel" = "total")
+
+VDACarCompontents <- VDACarCompontents %>% mutate(component = as_factor(component)) %>% mutate(component = fct_recode(component,
+                                                                                                                      "BIW" = "elvBIW",
+                                                                                                                      "Brakes" = "elvBrakes",
+                                                                                                                      "Chassis" = "elvChassis",
+                                                                                                                      "Closures" = "elvClosures",
+                                                                                                                      "Driveline" = "elvDriveline",
+                                                                                                                      "Powertrain" = "elvPowertrain",
+                                                                                                                      "Steering" = "elvSteering",
+                                                                                                                      "ThermalManagement" = "elvThermalManagement",
+                                                                                                                      "Transmission" = "elvTransmission",
+                                                                                                                      "Trim" = "elvTrim",
+                                                                                                                      "Wheels" = "elvWheels"))
+
+VDACarCompontents
+
+WriteXLS(c("VDACarCompontents"), ExcelFileName = "Data/VDACarCompontents.xlsx")
+```
+
+## Prepara the data for the plotting
+
+```{r, message=FALSE, warning=FALSE}
+
+PlotVDACarCompontents <- VDACarCompontents %>% select(-c("component share of weight"))
+PlotVDACarCompontents <- PlotVDACarCompontents %>% rename("weightCar" = "weight of car",
+                                                          "totalAmount" = "total amount of Al, Iron & Steel",
+                                                          "totalAl" = "total share of Al",
+                                                          "totalFe" = "total share of Iron & Steel")
+
+PlotVDACarCompontents
+
+```
+
+## Plot the material composition of the components by car segment
+
+```{r, message=FALSE, warning=FALSE}
+
+# Select segment A
+
+plot_segmentA <- PlotVDACarCompontents %>% filter(segment == "A")
+total_metalA <- plot_segmentA %>% summarise(totalMetal = sum(totalAmount))
+total_metalA <- total_metalA %>% summarise(totalMetal = sum(totalMetal))
+
+plot_segmentA_long <- plot_segmentA %>% pivot_longer(cols = -c(component, segment, year, weightCar, totalAmount, totalAl, totalFe), names_to = "variable", values_to = "value")
+plot_segmentA_long <- plot_segmentA_long %>% mutate(variable = as_factor(variable)) %>% mutate(variable = fct_relevel(variable, "castAluminium (AlSiCu)", "castAluminium (AlSiMg)", "Al 5xxx", "Al 6xxx", "Al 7xxx",
+                                                                                                                      "cast Iron", "alloy Steel", "mild Steel", "stainless Steel", "HSS", "UHSS", "AHSS", "AHSS (DualPhase)"))
+plot_segmentA_long
+
+
+alPalette <- c("#c6dbef", "#9ecae1", "#6baed6", "#3182bd", "#08519c")
+fePalette <- c("#fee6ce", "#fdd0a2", "#fdae6b", "#fd8d3c", "#f16913", "#d94801", "#a63603", "#7f2704")
+otherPalette <- c("#a1d99b")
+mgPalette <- c("#FFFF4D")
+materialPalette <- c(alPalette, fePalette, otherPalette, mgPalette)
+
+theme_set(theme(
+  # Remove panel border
+  #panel.border = element_blank(),  
+  # Remove panel grid lines
+  panel.grid.major = element_blank(),
+  panel.grid.major.y = element_line(color = "grey",
+                                        size = 0.25,
+                                        linetype = 1),
+  panel.grid.minor = element_blank(),
+  # Remove panel background
+  panel.background = element_blank(),
+  # Add axis line
+  axis.line = element_line(colour = "black")
+  ))
+
+p1 <- ggplot(data = plot_segmentA_long) +
+        geom_bar(aes(x = component, y = value, fill = variable), stat="identity") +
+        geom_errorbar(aes(x = component, ymin = totalAmount - 0.2 * totalAmount, ymax = totalAmount + 0.2 * totalAmount, width = 0.2)) +
+        geom_text(aes(label = paste0(round(totalAmount/weightCar*100, 1), "%"), x = component, y = totalAmount + 0.2 * totalAmount + 2), vjust = 0, size = 4) +
+        annotate("text", x = 9, y = 160, label = paste0("Aluminium, Iron and Steel: ", round(total_metalA, 0), " kg (", round(total_metalA/900*100, 0), "%)"), size = 4) +
+        labs(x = "Components", y = "Weight of the component (kg)", fill = "Materials", title = "Petrol car - Material composition of different components (A segment car - total weight 900 kg)") +
+        scale_fill_manual(values = materialPalette) +
+        theme(plot.title = element_text(hjust = 0.5, size = 15),
+              axis.text.x = element_text(angle = 15, , hjust = 0.9, vjust = 0.9))
+
+ggsave("Components/VDAComponents_segmentA.png", plot = p1, width = 11.7, height = 8.3, units = "in", dpi = 300)
+
+
+# Select segment B
+
+plot_segmentB <- PlotVDACarCompontents %>% filter(segment == "B")
+total_metalB <- plot_segmentB %>% summarise(totalMetal = sum(totalAmount))
+total_metalB <- total_metalB %>% summarise(totalMetal = sum(totalMetal))
+
+plot_segmentB_long <- plot_segmentB %>% pivot_longer(cols = -c(component, segment, year, weightCar, totalAmount, totalAl, totalFe), names_to = "variable", values_to = "value")
+plot_segmentB_long <- plot_segmentB_long %>% mutate(variable = as_factor(variable)) %>% mutate(variable = fct_relevel(variable, "castAluminium (AlSiCu)", "castAluminium (AlSiMg)", "Al 5xxx", "Al 6xxx", "Al 7xxx",
+                                                                                                                      "cast Iron", "alloy Steel", "mild Steel", "stainless Steel", "HSS", "UHSS", "AHSS", "AHSS (DualPhase)"))
+p2 <- ggplot(data = plot_segmentB_long) +
+        geom_bar(aes(x = component, y = value, fill = variable), stat="identity") +
+        geom_errorbar(aes(x = component, ymin = totalAmount - 0.2 * totalAmount, ymax = totalAmount + 0.2 * totalAmount, width = 0.2)) +
+        geom_text(aes(label = paste0(round(totalAmount/weightCar*100, 1), "%"), x = component, y = totalAmount + 0.2 * totalAmount + 2), vjust = 0, size = 4) +
+        annotate("text", x = 9, y = 210, label = paste0("Aluminium, Iron and Steel: ", round(total_metalB, 0), " kg (", round(total_metalB/1150*100, 0), "%)"), size = 4) +
+        labs(x = "Components", y = "Weight of the component (kg)", fill = "Materials", title = "Petrol car - Material composition of different components (B segment car - total weight 1150 kg)") +
+        scale_fill_manual(values = materialPalette) +
+        theme(plot.title = element_text(hjust = 0.5, size = 15),
+              axis.text.x = element_text(angle = 15, , hjust = 0.9, vjust = 0.9))
+
+ggsave("Components/VDAComponents_segmentB.png", plot = p2, width = 11.7, height = 8.3, units = "in", dpi = 300)
+
+
+# Select segment C
+
+plot_segmentC <- PlotVDACarCompontents %>% filter(segment == "C")
+total_metalC <- plot_segmentC %>% summarise(totalMetal = sum(totalAmount))
+total_metalC <- total_metalC %>% summarise(totalMetal = sum(totalMetal))
+
+plot_segmentC_long <- plot_segmentC %>% pivot_longer(cols = -c(component, segment, year, weightCar, totalAmount, totalAl, totalFe), names_to = "variable", values_to = "value")
+plot_segmentC_long <- plot_segmentC_long %>% mutate(variable = as_factor(variable)) %>% mutate(variable = fct_relevel(variable, "castAluminium (AlSiCu)", "castAluminium (AlSiMg)", "Al 5xxx", "Al 6xxx", "Al 7xxx",
+                                                                                                                      "cast Iron", "alloy Steel", "mild Steel", "stainless Steel", "HSS", "UHSS", "AHSS", "AHSS (DualPhase)"))
+p3 <- ggplot(data = plot_segmentC_long) +
+        geom_bar(aes(x = component, y = value, fill = variable), stat="identity") +
+        geom_errorbar(aes(x = component, ymin = totalAmount - 0.2 * totalAmount, ymax = totalAmount + 0.2 * totalAmount, width = 0.2)) +
+        geom_text(aes(label = paste0(round(totalAmount/weightCar*100, 1), "%"), x = component, y = totalAmount + 0.2 * totalAmount + 2), vjust = 0, size = 4) +
+        annotate("text", x = 9, y = 240, label = paste0("Aluminium, Iron and Steel: ", round(total_metalC, 0), " kg (", round(total_metalC/1350*100, 0), "%)"), size = 4) +
+        labs(x = "Components", y = "Weight of the component (kg)", fill = "Materials", title = "Petrol car - Material composition of different components (C segment car - total weight 1350 kg)") +
+        scale_fill_manual(values = materialPalette) +
+        theme(plot.title = element_text(hjust = 0.5, size = 15),
+              axis.text.x = element_text(angle = 15, , hjust = 0.9, vjust = 0.9))
+
+ggsave("Components/VDAComponents_segmentC.png", plot = p3, width = 11.7, height = 8.3, units = "in", dpi = 300)
+
+# Select segment D
+
+plot_segmentD <- PlotVDACarCompontents %>% filter(segment == "D")
+total_metalD <- plot_segmentD %>% summarise(totalMetal = sum(totalAmount))
+total_metalD <- total_metalD %>% summarise(totalMetal = sum(totalMetal))
+
+plot_segmentD_long <- plot_segmentD %>% pivot_longer(cols = -c(component, segment, year, weightCar, totalAmount, totalAl, totalFe), names_to = "variable", values_to = "value")
+plot_segmentD_long <- plot_segmentD_long %>% mutate(variable = as_factor(variable)) %>% mutate(variable = fct_relevel(variable, "castAluminium (AlSiCu)", "castAluminium (AlSiMg)", "Al 5xxx", "Al 6xxx", "Al 7xxx",
+                                                                                                                      "cast Iron", "alloy Steel", "mild Steel", "stainless Steel", "HSS", "UHSS", "AHSS", "AHSS (DualPhase)"))
+p4 <- ggplot(data = plot_segmentD_long) +
+        geom_bar(aes(x = component, y = value, fill = variable), stat="identity") +
+        geom_errorbar(aes(x = component, ymin = totalAmount - 0.2 * totalAmount, ymax = totalAmount + 0.2 * totalAmount, width = 0.2)) +
+        geom_text(aes(label = paste0(round(totalAmount/weightCar*100, 1), "%"), x = component, y = totalAmount + 0.2 * totalAmount + 2), vjust = 0, size = 4) +
+        annotate("text", x = 9, y = 305, label = paste0("Aluminium, Iron and Steel: ", round(total_metalD, 0), " kg (", round(total_metalD/1600*100, 0), "%)"), size = 4) +
+        labs(x = "Components", y = "Weight of the component (kg)", fill = "Materials", title = "Petrol car - Material composition of different components (D segment car - total weight 1600 kg)") +
+        scale_fill_manual(values = materialPalette) +
+        theme(plot.title = element_text(hjust = 0.5, size = 15),
+              axis.text.x = element_text(angle = 15, , hjust = 0.9, vjust = 0.9))
+
+ggsave("Components/VDAComponents_segmentD.png", plot = p4, width = 11.7, height = 8.3, units = "in", dpi = 300)
+
+
+# Select segment E
+
+plot_segmentE <- PlotVDACarCompontents %>% filter(segment == "E")
+total_metalE <- plot_segmentE %>% summarise(totalMetal = sum(totalAmount))
+total_metalE <- total_metalE %>% summarise(totalMetal = sum(totalMetal))
+plot_segmentE
+total_metalE
+
+plot_segmentE_long <- plot_segmentE %>% pivot_longer(cols = -c(component, segment, year, weightCar, totalAmount, totalAl, totalFe), names_to = "variable", values_to = "value")
+plot_segmentE_long <- plot_segmentE_long %>% mutate(variable = as_factor(variable)) %>% mutate(variable = fct_relevel(variable, "castAluminium (AlSiCu)", "castAluminium (AlSiMg)", "Al 5xxx", "Al 6xxx", "Al 7xxx",
+                                                                                                                      "cast Iron", "alloy Steel", "mild Steel", "stainless Steel", "HSS", "UHSS", "AHSS", "AHSS (DualPhase)"))
+p5 <- ggplot(data = plot_segmentE_long) +
+        geom_bar(aes(x = component, y = value, fill = variable), stat="identity") +
+        geom_errorbar(aes(x = component, ymin = totalAmount - 0.2 * totalAmount, ymax = totalAmount + 0.2 * totalAmount, width = 0.2)) +
+        geom_text(aes(label = paste0(round(totalAmount/weightCar*100, 1), "%"), x = component, y = totalAmount + 0.2 * totalAmount + 2), vjust = 0, size = 4) +
+        annotate("text", x = 9, y = 325, label = paste0("Aluminium, Iron and Steel: ", round(total_metalE, 0), " kg (", round(total_metalE/1900*100, 0), "%)"), size = 4) +
+        labs(x = "Components", y = "Weight of the component (kg)", fill = "Materials", title = "Petrol car - Material composition of different components (E segment car - total weight 1800 kg)") +
+        scale_fill_manual(values = materialPalette) +
+        theme(plot.title = element_text(hjust = 0.5, size = 15),
+              axis.text.x = element_text(angle = 15, , hjust = 0.9, vjust = 0.9))
+
+ggsave("Components/VDAComponents_segmentE.png", plot = p5, width = 11.7, height = 8.3, units = "in", dpi = 300)
+
+
+# Select segment F
+
+plot_segmentF <- PlotVDACarCompontents %>% filter(segment == "F")
+total_metalF <- plot_segmentF %>% summarise(totalMetal = sum(totalAmount))
+total_metalF <- total_metalF %>% summarise(totalMetal = sum(totalMetal))
+plot_segmentF
+total_metalF
+
+plot_segmentF_long <- plot_segmentF %>% pivot_longer(cols = -c(component, segment, year, weightCar, totalAmount, totalAl, totalFe), names_to = "variable", values_to = "value")
+plot_segmentF_long <- plot_segmentF_long %>% mutate(variable = as_factor(variable)) %>% mutate(variable = fct_relevel(variable, "castAluminium (AlSiCu)", "castAluminium (AlSiMg)", "Al 5xxx", "Al 6xxx", "Al 7xxx",
+                                                                                                                      "cast Iron", "alloy Steel", "mild Steel", "stainless Steel", "HSS", "UHSS", "AHSS", "AHSS (DualPhase)"))
+p6 <- ggplot(data = plot_segmentF_long) +
+        geom_bar(aes(x = component, y = value, fill = variable), stat="identity") +
+        geom_errorbar(aes(x = component, ymin = totalAmount - 0.2 * totalAmount, ymax = totalAmount + 0.2 * totalAmount, width = 0.2)) +
+        geom_text(aes(label = paste0(round(totalAmount/weightCar*100, 1), "%"), x = component, y = totalAmount + 0.2 * totalAmount + 2), vjust = 0, size = 4) +
+        annotate("text", x = 9, y = 325, label = paste0("Aluminium, Iron and Steel: ", round(total_metalE, 0), " kg (", round(total_metalE/1900*100, 0), "%)"), size = 4) +
+        labs(x = "Components", y = "Weight of the component (kg)", fill = "Materials", title = "Petrol car - Material composition of different components (F segment car - total weight 2150 kg)") +
+        scale_fill_manual(values = materialPalette) +
+        theme(plot.title = element_text(hjust = 0.5, size = 15),
+              axis.text.x = element_text(angle = 15, , hjust = 0.9, vjust = 0.9))
+
+ggsave("Components/VDAComponents_segmentF.png", plot = p6, width = 11.7, height = 8.3, units = "in", dpi = 300)
+
+```
+
+```{r, message=FALSE, warning=FALSE}
+
+#BIW
+
+PlotVDACarCompontents
+
+componentBIW <- PlotVDACarCompontents %>% filter(component == "BIW" & (segment == "A" | segment == "B" | segment == "C" | segment == "D" | segment == "E" | segment == "F"))
+componentBIW
+
+componentBIW_long <- componentBIW %>% pivot_longer(cols = -c(component, segment, year, weightCar, totalAmount, totalAl, totalFe), names_to = "variable", values_to = "value")
+componentBIW_long <- componentBIW_long %>% mutate(variable = as_factor(variable)) %>% mutate(variable = fct_relevel(variable, "castAluminium (AlSiCu)", "castAluminium (AlSiMg)", "Al 5xxx", "Al 6xxx", "Al 7xxx",
+                                                                                                                      "cast Iron", "alloy Steel", "mild Steel", "stainless Steel", "HSS", "UHSS", "AHSS", "AHSS (DualPhase)"))
+componentBIW_long
+
+p1 <- ggplot(data = componentBIW_long) +
+        geom_bar(aes(x = segment, y = value, fill = variable), stat="identity") +
+        geom_errorbar(aes(x = segment, ymin = totalAmount - 0.2 * totalAmount, ymax = totalAmount + 0.2 * totalAmount, width = 0.2)) +
+        geom_text(aes(label = paste0("ratio (Al/Fe) = ", round(totalAl/totalFe*100, 1), "%"), x = segment, y = totalAmount + 0.2 * totalAmount + 2), vjust = 0, size = 4) +
+        labs(x = "Segments", y = "Weight of the BIW (kg)", fill = "Materials", title = "Petrol car - Material composition of BIW (A to F segment car)") +
+        scale_fill_manual(values = materialPalette) +
+        theme(plot.title = element_text(hjust = 0.5, size = 15))
+
+ggsave("Components/VDAComponents_BIW.png", plot = p1, width = 11.7, height = 8.3, units = "in", dpi = 300)
+
+
+p1 <- ggplot(data = componentBIW_long) +
+        geom_bar(aes(x = segment, y = value, fill = variable), stat="identity") +
+        geom_errorbar(aes(x = segment, ymin = totalAmount - 0.2 * totalAmount, ymax = totalAmount + 0.2 * totalAmount, width = 0.2)) +
+        geom_text(aes(label = paste0("Al/Fe = ", round(totalAl/totalFe*100, 1), "%"), x = segment, y = totalAmount + 4), vjust = 0, size = 5) +
+        labs(x = "segments", y = "mass of BIW (kg)", fill = "Materials", title = "Petrol car - Material Composition of BIW (A to F segment)") +
+        scale_fill_manual(values = materialPalette) +
+        theme_bw() +
+        theme(
+        panel.grid.major = element_blank(),  # Remove major grid lines
+        panel.grid.minor = element_blank(),  # Remove minor grid lines
+        text = element_text(size = 15),
+        axis.title = element_text(size = 16, face = "bold"),
+        axis.text = element_text(size = 15, color = "black"),
+        legend.title = element_text(size = 15, face = "bold"),
+        plot.title = element_text(size = 16, face = "bold", hjust = 0.5)
+)
+
+ggsave("Data/Figure11.png", plot = p1, width = 11.7, height = 8.3, units = "in", dpi = 300)
+
+
+#Chassis
+
+componentChassis <- PlotVDACarCompontents %>% filter(component == "Chassis" & (segment == "A" | segment == "B" | segment == "C" | segment == "D" | segment == "E" | segment == "F"))
+componentChassis
+
+componentChassis_long <- componentChassis %>% pivot_longer(cols = -c(component, segment, year, weightCar, totalAmount, totalAl, totalFe), names_to = "variable", values_to = "value")
+componentChassis_long <- componentChassis_long %>% mutate(variable = as_factor(variable)) %>% mutate(variable = fct_relevel(variable, "castAluminium (AlSiCu)", "castAluminium (AlSiMg)", "Al 5xxx", "Al 6xxx", "Al 7xxx",
+                                                                                                                      "cast Iron", "alloy Steel", "mild Steel", "stainless Steel", "HSS", "UHSS", "AHSS", "AHSS (DualPhase)"))
+componentChassis_long
+
+p1 <- ggplot(data = componentChassis_long) +
+        geom_bar(aes(x = segment, y = value, fill = variable), stat="identity") +
+        geom_errorbar(aes(x = segment, ymin = totalAmount - 0.2 * totalAmount, ymax = totalAmount + 0.2 * totalAmount, width = 0.2)) +
+        geom_text(aes(label = paste0("ratio (Al/Fe) = ", round(totalAl/totalFe*100, 1), "%"), x = segment, y = totalAmount + 0.2 * totalAmount + 2), vjust = 0, size = 4) +
+        labs(x = "Segments", y = "Weight of the Chassis (kg)", fill = "Materials", title = "Petrol car - Material composition of Chassis (A to F segment car)") +
+        scale_fill_manual(values = materialPalette) +
+        theme(plot.title = element_text(hjust = 0.5, size = 15))
+
+ggsave("Components/VDAComponents_Chassis.png", plot = p1, width = 11.7, height = 8.3, units = "in", dpi = 300)
+
+
+
+#Powertrain
+
+componentPowertrain <- PlotVDACarCompontents %>% filter(component == "Powertrain" & (segment == "A" | segment == "B" | segment == "C" | segment == "D" | segment == "E" | segment == "F"))
+componentPowertrain
+
+componentPowertrain_long <- componentPowertrain %>% pivot_longer(cols = -c(component, segment, year, weightCar, totalAmount, totalAl, totalFe), names_to = "variable", values_to = "value")
+componentPowertrain_long <- componentPowertrain_long %>% mutate(variable = as_factor(variable)) %>% mutate(variable = fct_relevel(variable, "castAluminium (AlSiCu)", "castAluminium (AlSiMg)", "Al 5xxx", "Al 6xxx", "Al 7xxx",
+                                                                                                                      "cast Iron", "alloy Steel", "mild Steel", "stainless Steel", "HSS", "UHSS", "AHSS", "AHSS (DualPhase)"))
+componentPowertrain_long
+
+p1 <- ggplot(data = componentPowertrain_long) +
+        geom_bar(aes(x = segment, y = value, fill = variable), stat="identity") +
+        geom_errorbar(aes(x = segment, ymin = totalAmount - 0.2 * totalAmount, ymax = totalAmount + 0.2 * totalAmount, width = 0.2)) +
+        geom_text(aes(label = paste0("ratio (Al/Fe) = ", round(totalAl/totalFe*100, 1), "%"), x = segment, y = totalAmount + 0.2 * totalAmount + 2), vjust = 0, size = 4) +
+        labs(x = "Segments", y = "Weight of the Powertrain (kg)", fill = "Materials", title = "Petrol car - Material composition of Powertrain (A to F segment car)") +
+        scale_fill_manual(values = materialPalette) +
+        theme(plot.title = element_text(hjust = 0.5, size = 15))
+
+ggsave("Components/VDAComponents_Powertrain.png", plot = p1, width = 11.7, height = 8.3, units = "in", dpi = 300)
+
+
+```
+
+## Calculate the approximate composition of a C segment BEV
+
+```{r, message=FALSE, warning=FALSE}
+
+CarComponentC <- componentCar.Petrol %>% filter(segment == "C")
+CarComponentC <- CarComponentC %>% select(-ratio, -weightratio)
+CarComponentC
+
+## Go to BEV weight 
+
+CarComponentBEV_C <- CarComponentC %>% mutate(weight = 1800)
+CarComponentBEV_C
+
+## Add column for the battery material
+
+CarComponentBEV_C <- CarComponentBEV_C %>% mutate(batteryMatterial = 0, Cu = 0, permanentMagnet = 0)
+CarComponentBEV_C
+
+# Fill in the battery row with values
+CarComponentBEV_C <- CarComponentBEV_C %>% ungroup()
+CarComponentBEV_C <- CarComponentBEV_C %>% add_row(components = "Battery", segment = "C", weight = 1800, calAl_5xxx = 0, calAl_6xxx = 0, calAl_7xxx = 0, calcastAluminiumAlSiCu = 0, calcastAluminiumAlSiMg = 0, calmildSteel = 0, 
+                                                   calHSS = 0, calAHSS = 0, calUHSS = 0, calcastIron = 0, calstainlessSteel = 0, calAHSS_DualPhase = 0, total = 4000, batteryMatterial = 400, Cu = 0, permanentMagnet = 0, 
+                                                   calalloySteel = 0, calOthers = 0, totalAl = 0, totalIronSteel = 0)
+
+CarComponentBEV_C[6, "calAl_6xxx"] <- 2
+CarComponentBEV_C[6, "calAl_7xxx"] <- 2
+CarComponentBEV_C[6, "calcastAluminiumAlSiCu"] <- 20
+CarComponentBEV_C[6, "calcastAluminiumAlSiMg"] <- 5
+CarComponentBEV_C[6, "calmildSteel"] <- 0
+CarComponentBEV_C[6, "calAHSS"] <- 20
+CarComponentBEV_C[6, "calcastIron"] <- 5
+CarComponentBEV_C[6, "calstainlessSteel"] <- 0
+CarComponentBEV_C[6, "Cu"] <- 15
+CarComponentBEV_C[6, "permanentMagnet"] <- 2.5
+CarComponentBEV_C
+
+CarComponentBEV_C[9, "calAl_6xxx"] <- 1.5
+CarComponentBEV_C[9, "calAl_7xxx"] <- 0.5
+CarComponentBEV_C[9, "calcastAluminiumAlSiCu"] <- 2.0
+CarComponentBEV_C[9, "calcastAluminiumAlSiMg"] <- 1.0
+CarComponentBEV_C[9, "calmildSteel"] <- 5.0
+CarComponentBEV_C[9, "calHSS"] <- 3.0
+CarComponentBEV_C[9, "calstainlessSteel"] <- 4.0
+CarComponentBEV_C[9, "calalloySteel"] <- 2.5
+CarComponentBEV_C
+
+CarComponentBEV_C <- CarComponentBEV_C %>% mutate(total = calAl_5xxx + calAl_6xxx + calAl_7xxx + calcastAluminiumAlSiCu + calcastAluminiumAlSiMg + calmildSteel + calHSS + calAHSS + calUHSS +
+                                                                                              calcastIron + calstainlessSteel + calAHSS_DualPhase + calalloySteel + calOthers + batteryMatterial + Cu + permanentMagnet,
+                                                                                            totalAl = calAl_5xxx + calAl_6xxx + calAl_7xxx + calcastAluminiumAlSiCu + calcastAluminiumAlSiMg,
+                                                                                            totalIronSteel = calmildSteel + calHSS + calAHSS + calUHSS + calcastIron + calstainlessSteel + calAHSS_DualPhase + calalloySteel + calOthers)
+CarComponentBEV_C <- CarComponentBEV_C %>% mutate(weightratio = total)
+
+CarComponentBEV_C
+
+# Get the order right: Move total to the end
+CarComponentBEV_C <- CarComponentBEV_C %>% relocate(totalAl, .after = calcastAluminiumAlSiMg)
+CarComponentBEV_C <- CarComponentBEV_C %>% relocate(total, .after = last_col())
+
+# Name the different columns correctly
+CarComponentBEV_C <- CarComponentBEV_C %>% rename("component" = "components",
+                                                  "weight of car" = "weight",
+                                                  "component share of weight" = "weightratio",
+                                                  "Al 5xxx" = "calAl_5xxx",
+                                                  "Al 6xxx" = "calAl_6xxx",
+                                                  "Al 7xxx" = "calAl_7xxx",
+                                                  "castAluminium (AlSiCu)" = "calcastAluminiumAlSiCu",
+                                                  "castAluminium (AlSiMg)" = "calcastAluminiumAlSiMg",
+                                                  "total share of Al" = "totalAl",
+                                                  "mild Steel" = "calmildSteel",
+                                                  "HSS" = "calHSS",
+                                                  "AHSS" = "calAHSS",
+                                                  "UHSS" = "calUHSS",
+                                                  "cast Iron" = "calcastIron",
+                                                  "stainless Steel" = "calstainlessSteel",
+                                                  "AHSS (DualPhase)" = "calAHSS_DualPhase",
+                                                  "alloy Steel" = "calalloySteel",
+                                                  "Others" = "calOthers",
+                                                  "Magnesium" = "calMagnesium",
+                                                  "total share of Iron & Steel" = "totalIronSteel",
+                                                  "total amount of Al, Iron & Steel" = "total")
+
+CarComponentBEV_C <- CarComponentBEV_C %>% mutate(component = as_factor(component)) %>% mutate(component = fct_recode(component,
+                                                                                                                      "BIW" = "elvBIW",
+                                                                                                                      "Brakes" = "elvBrakes",
+                                                                                                                      "Chassis" = "elvChassis",
+                                                                                                                      "Closures" = "elvClosures",
+                                                                                                                      "Driveline" = "elvDriveline",
+                                                                                                                      "Powertrain" = "elvPowertrain",
+                                                                                                                      "Steering" = "elvSteering",
+                                                                                                                      "ThermalManagement" = "elvThermalManagement",
+                                                                                                                      "Transmission" = "elvTransmission",
+                                                                                                                      "Trim" = "elvTrim",
+                                                                                                                      "Wheels" = "elvWheels"))
+
+CarComponentBEV_C
+
+PlotCarComponentBEV_C <- CarComponentBEV_C %>% select(-c("component share of weight"))
+PlotCarComponentBEV_C <- PlotCarComponentBEV_C %>% rename("weightCar" = "weight of car",
+                                                          "totalAmount" = "total amount of Al, Iron & Steel",
+                                                          "totalAl" = "total share of Al",
+                                                          "totalFe" = "total share of Iron & Steel")
+
+PlotCarComponentBEV_C <- PlotCarComponentBEV_C %>% rename("total Battery" = "batteryMatterial",
+                                                          "Permenent Magnets" = "permanentMagnet")
+PlotCarComponentBEV_C
+
+total_metalA <- PlotCarComponentBEV_C %>% summarise(totalMetal = sum(totalAmount)) - 400.0
+total_metalA
+
+
+
+plotCarComponentBEV_C_long <- PlotCarComponentBEV_C %>% pivot_longer(cols = -c(component, segment, year, weightCar, totalAmount, totalAl, totalFe), names_to = "variable", values_to = "value")
+plotCarComponentBEV_C_long <- plotCarComponentBEV_C_long %>% mutate(variable = as_factor(variable)) %>% mutate(variable = fct_relevel(variable, "castAluminium (AlSiCu)", "castAluminium (AlSiMg)", "Al 5xxx", "Al 6xxx", "Al 7xxx",
+                                                                                                                      "cast Iron", "alloy Steel", "mild Steel", "stainless Steel", "HSS", "UHSS", "AHSS", "AHSS (DualPhase)", "total Battery",
+                                                                                                                      "Cu", "Permenent Magnets", "Others"))
+plotCarComponentBEV_C_long
+
+
+alPalette <- c("#c6dbef", "#9ecae1", "#6baed6", "#3182bd", "#08519c")
+fePalette <- c("#fee6ce", "#fdd0a2", "#fdae6b", "#fd8d3c", "#f16913", "#d94801", "#a63603", "#7f2704")
+otherPalette <- c("#a1d99b")
+mgPalette <- c("#FFFF4D")
+batteryPalette <- c("#333333")
+electricmotorPalette <- c("#bcbddc", "#756bb1")
+materialPalette <- c(alPalette, fePalette, batteryPalette, electricmotorPalette, otherPalette, mgPalette)
+
+theme_set(theme(
+  # Remove panel border
+  #panel.border = element_blank(),  
+  # Remove panel grid lines
+  panel.grid.major = element_blank(),
+  panel.grid.major.y = element_line(color = "grey",
+                                        size = 0.25,
+                                        linetype = 1),
+  panel.grid.minor = element_blank(),
+  # Remove panel background
+  panel.background = element_blank(),
+  # Add axis line
+  axis.line = element_line(colour = "black")
+  ))
+
+p1 <- ggplot(data = plotCarComponentBEV_C_long) +
+        geom_bar(aes(x = component, y = value, fill = variable), stat="identity") +
+        geom_errorbar(aes(x = component, ymin = totalAmount - 0.2 * totalAmount, ymax = totalAmount + 0.2 * totalAmount, width = 0.2)) +
+        geom_text(aes(label = paste0(round(totalAmount/weightCar*100, 1), "%"), x = component, y = totalAmount + 0.2 * totalAmount + 2), vjust = 0, size = 4) +
+        annotate("text", x = 6, y = 350, label = paste0("Aluminium, Iron and Steel: ", round(total_metalA, 0), " kg (", round(total_metalA/1800*100, 0), "%)"), size = 4) +
+        labs(x = "Components", y = "Weight of the component (kg)", fill = "Materials", title = "BEV - Material composition of different components (C segment car - total weight 1800 kg)") +
+        scale_fill_manual(values = materialPalette) +
+        theme(plot.title = element_text(hjust = 0.5, size = 15),
+              axis.text.x = element_text(angle = 15, , hjust = 0.9, vjust = 0.9))
+
+ggsave("Components/VDAComponents_BEVsegmentC.png", plot = p1, width = 11.7, height = 8.3, units = "in", dpi = 300)
+
+
+
+```
+
+## Do some statistics
+
+```{r, message=FALSE, warning=FALSE}
+
+componentCar.Petrol_summary <- componentCar.Petrol %>% group_by(segment) %>% summarise(calAl_5xxx = sum(calAl_5xxx), calAl_6xxx = sum(calAl_6xxx), calAl_7xxx = sum(calAl_7xxx),
+                                                                                                          calCastAl = sum(calcastAluminiumAlSiCu + calcastAluminiumAlSiMg), calcastIron = sum(calcastIron), 
+                                                                                                          calmildSteel = sum(calmildSteel), calotherSteel = sum(calstainlessSteel + calalloySteel), calHSS = sum(calHSS),
+                                                                                                          calAHSS = sum(calAHSS + calAHSS_DualPhase), calUHSS = sum(calUHSS), calMagnesium = sum(calMagnesium))
+componentCar_summary <- componentCar.Petrol_summary
+
+```
+
+## Add the productr keys
+
+```{r, message=FALSE, warning=FALSE}
+
+tempKeys <- productKeys %>% filter(productKeyLevel1 == "elvPetrol")
+
+componentCarPetrol <- componentCar.Petrol %>% left_join(tempKeys, by = "segment")
+componentCarPetrol
+
+```
+
+## Get the composition for cathalyt and electronics
+
+```{r, message=FALSE, warning=FALSE}
+
+compositionPetrol <- composition %>% filter(productKeyLevel1 == "elvPetrol" & year == 2020)
+compositionPetrol <- compositionPetrol %>% select(-c(totalAlCalculate, castingAlCalculate, extrusionAlCalculate, forgingAlCalculate, sheetAlCalculate,
+                                                     castIronCalculate, mildSteelCalculate, HSSCalculate, AHSSCalculate, UHSSCalculate, totalIronSteelCalculate, MgCalculate,
+                                                     totalAlloys, totalPPR, EED_total, totalMetals, totalOtherMaterilas, total, engineCable, perMagnet, battery, generatorCable, generatorperMagnet))
+
+compositionPetrol
+
+componentCarPetrol <- componentCarPetrol %>%
+  mutate(
+    calculatePt = 0,
+    calculatePd = 0,
+    calculateRh = 0,
+    calculateCe = 0,
+    calculateLa = 0,
+    powerElectronics = 0,
+    actuators = 0,
+    controllers = 0,
+    light = 0,
+    cableLike = 0
+    )
+
+componentCarPetrol
+
+unique_names <- componentCarPetrol %>% 
+  distinct(segment) %>%
+  pull(segment)
+
+for (i in 1:length(unique_names)) {
+    temp1 <- compositionPetrol %>% filter(segment == unique_names[i])
+    temp2 <- componentCarPetrol %>% group_by(productKeyLevel2) %>% filter(segment == unique_names[i])
+
+  componentCarPetrol <- componentCarPetrol %>%
+    add_row(
+      components = "elvCatalyticConverters",
+      segment = temp1$segment,
+      year = temp1$year,
+      weight = temp2$weight[1],
+      productKeyLevel1 = temp1$productKeyLevel1, 
+      productKeyLevel2 = temp1$productKeyLevel2,
+      calculatePt = temp1$calculatePt,
+      calculatePd = temp1$calculatePd,
+      calculateRh = temp1$calculateRh,
+      calculateCe = temp1$calculateCe,
+      calculateLa = temp1$calculateLa
+    ) %>%
+    add_row(
+      components = "elvPowerElectronics",
+      segment = temp1$segment,
+      year = temp1$year,
+      weight = temp2$weight[1],
+      productKeyLevel1 = temp1$productKeyLevel1, 
+      productKeyLevel2 = temp1$productKeyLevel2,
+      powerElectronics = temp1$powerElectronics
+    ) %>%
+    add_row(
+      components = "elvEmbeddedElectronicsActuators",
+      segment = temp1$segment,
+      year = temp1$year,
+      weight = temp2$weight[1],
+      productKeyLevel1 = temp1$productKeyLevel1, 
+      productKeyLevel2 = temp1$productKeyLevel2,
+      actuators = temp1$actuators
+    ) %>%
+    add_row(
+      components = "elvEmbeddedElectronicsControllers",
+      segment = temp1$segment,
+      year = temp1$year,
+      weight = temp2$weight[1],
+      productKeyLevel1 = temp1$productKeyLevel1, 
+      productKeyLevel2 = temp1$productKeyLevel2,
+      controllers = temp1$controllers
+    ) %>%
+    add_row(
+      components = "elvEmbeddedElectronicsHeadlights",
+      segment = temp1$segment,
+      year = temp1$year,
+      weight = temp2$weight[1],
+      productKeyLevel1 = temp1$productKeyLevel1, 
+      productKeyLevel2 = temp1$productKeyLevel2,
+      light = temp1$light
+    ) %>%
+    add_row(
+      components = "elvEmbeddedElectronicsCables",
+      segment = temp1$segment,
+      year = temp1$year,
+      weight = temp2$weight[1],
+      productKeyLevel1 = temp1$productKeyLevel1, 
+      productKeyLevel2 = temp1$productKeyLevel2,
+      cableLike = temp1$cableLike
+    )
+
+  componentCarPetrol <- componentCarPetrol %>%
+    mutate(across(everything(), ~ifelse(is.na(.), 0, .)))
+}
+
+componentCarPetrol
+```
+
+## Calculate the rest material and then the total, which has to match the total of each segment
+
+```{r, message=FALSE, warning=FALSE}
+
+componentCarPetrol <- componentCarPetrol %>% group_by(segment) %>% mutate(totalComponents = sum(total))
+componentCarPetrol
+```
+
+
+## write to excel file as output
+
+```{r, message=FALSE, warning=FALSE}
+# write to excel sheet using perl
+
+WriteXLS(c("componentCarPetrol"), ExcelFileName = filename35_output)
+WriteXLS(c("componentCar_summary"), ExcelFileName = "Components/Summary.xlsx")
+
+```

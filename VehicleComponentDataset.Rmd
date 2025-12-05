@@ -1,0 +1,1767 @@
+---
+title: "Generate the Excelsheet for Vehicle Composition - Components Petrol cars"
+author: "Matthias Roesslein - Empa"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+tags: [FutuRaM, Empa, vehicles, car, van, new data, 1990 - 2050]
+abstract: |
+  All the code to fill in and generate the datasets for FutuRaM data template. This is for all the new data from 2010 to 2030.
+  Replace extrusion, forging and sheet aluminium with the respectiv material classes of wroughtaluminium. 
+  - Extrusion aluminium allowys consist mainly of EN AW-6XXX series
+  - Forging aluminium alloys consist mainly of EN AW-2XXX series
+  - Sheet aluminium alloys consists minly of EN AW-5XXX series
+  
+  Handles data between 1990 and 2050
+  
+version 1.0.0
+
+fontsize: 12pt
+output:
+  pdf_document: default
+    df_print: paged
+---
+
+*Checks*
+
+
+--------
+
+**Copyright notice:** Copyright © 2025 Empa, Matthias Roesslein
+
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+# Get all the datasets needed and the fill them into the FutuRaM Dat template
+
+## Loading of the libraries
+
+We are using tidyverse framework to rearrange and analysis the data. 
+
+
+```{r, message=FALSE, warning=FALSE}
+# load libraries
+library(tidyverse)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(scales)
+library(forcats)
+
+library(readxl) # read excel files
+library("openxlsx")   #The openxlsx package is highly customizable and allows you to: Write multiple data frames to different sheets of the same Excel file. Customize formatting, such as column widths, bold headers, and colors.
+
+```
+
+```{r, message=FALSE, warning=FALSE}
+tidyverse_conflicts()
+```
+
+
+## Read the headers of the FutuRaM data table
+
+formats:
+1  dataEntryID             - numeric
+2  relatedFutuRaM-WS       - text
+3  use/EoL                 - text
+4  uinqueStockOrFlowName   - text
+5  LoWchapter              - numeric
+6  LoWsubChapter           - text
+7  LoWkey                  - text
+8  ISRI                    - numeric
+9  HS                      - text
+10 collectionCategory      - text
+
+11 productID               - numeric
+12 productKeyLevel1        - text
+13 productKeyLevel2        - text
+14 productKeyLevel3        - text
+15 productDescriptionFromDataSource    - text
+16 similarityBetweenProductDescriptionAndKey    - numeric
+17 productionYear           - text    (should be numeric)
+18 yearEntryEOLphase        - text    (should be numeric)
+19 componentID              - numeric
+20 componentKeyLevel0       - text
+
+21 componentKeyLevel1       - text
+22 componentKeyLevel2       - text
+23 componentDescriptionFromDataSource     - text
+24 similarityBetweenComponentDescriptionAndKey    - numeric
+25 embeddedComponent        - text
+26 materialKeyLevel0        - text
+27 materialKeyLevel1        - text
+28 materialKeyLevel2        - text
+29 materialKeyLevel3        - text
+30 materialKeyLevel4        - text
+
+31 materialDescriptionFromDataSource      - text
+32 similarityBetweenMaterialDescriptionAndKey   - numeric
+33 element                  - text
+34 parameterCode            - text
+35 parameter                - text
+36 sampleOriginLocationNUTS-0   - text
+37 value                    - numeric
+38 valueType                - text
+39 valueLowerLimit          - numeric
+40 valueUpperLimit          - numeric
+
+41 unitOfMeasurementValue   - text
+42 valueGeneration          - text
+43 samplingMethod           - text
+44 digestionMethod          - text
+45 measurementMethod        - text
+46 measurementYear          - numeric (date)
+47 measurementLocationNUTS-0    - text
+48 dataSetType              - text
+49 uncertaintyFromReference   - numeric
+50 unitOfMeasurementUncertainty   - text
+
+51 uncertainty%             - numeric
+52 uncertaintyType          - text
+53 dqValidity               - numeric
+54 dqAccuracy               - numeric
+55 dqConsistency            - numeric
+56 dqIntegrity              - numeric
+57 dqTimeliness             - numeric
+58 dqCompleteness           - numeric
+59 dataQualityMean          - numeric
+60 dataQuality              - numeric
+
+61 criticality2023          - logical
+62 criticality2020          - logical
+63 criticality2017          - logical
+64 criticality2014          - logical
+65 criticality2011          - logical
+66 reference                - text
+67 rights                   - text
+68 notes                    - text
+69 referenceURL             - text
+70 dataProcessor            - text
+
+71 dataProcessorInstitution   - text
+72 dataEntryDate              - date
+
+```{r, message=FALSE, warning=FALSE}
+
+filename11_input <- "Data/230831_template_product-centric_WP3_version5_ELV_Ready.xlsx"
+
+col_types <- c("numeric", "text", "text", "text", "numeric", "text", "text", "numeric", "numeric", "text",
+               "numeric", "text", "text", "text", "text", "numeric", "text", "text", "numeric", "text",
+               "text", "text", "text", "numeric", "text", "text", "text", "text", "text", "text",
+               "text", "numeric", "text", "text", "text", "text", "numeric", "text", "numeric", "numeric",
+               "text", "text", "text", "text", "text", "numeric", "text", "text", "numeric", "text",
+               "numeric", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", "numeric",
+               "logical", "logical", "logical", "logical", "logical", "text", "text", "text", "text", "text",
+               "text", "date")
+
+futuram_tab01 <- read_excel(filename11_input, col_types = col_types)
+futuram_tab01Template <- futuram_tab01
+futuram_tab01
+```
+
+
+## Additional table for WP4
+
+0   Count                     - integer
+1   Scenario                  - text
+2   Year                      - integer
+3   Location                  - text
+4   Stock/ID                  - text
+5   Layer 1                   - text
+6   Layer 2                   - text
+7   Layer 3                   - text
+8   Layer 4                   - text
+9   parameterCode             - text
+10  Value                     - real
+11  LowValue                  - real
+12  HighValue                 - real
+13  UoM                       - text
+14  DQS                       - integer
+
+
+```{r, message=FALSE, warning=FALSE}
+
+count <- c(0)
+Scenario <- c("Scenario")
+Year <- c(1980)
+Location <- c("location")
+Stock <- c("Stock/ID")
+Layer_1 <- c("layer 1")
+Layer_2 <- c("layer 2")
+Layer_3 <- c("layer 3")
+Layer_4 <- c("layer 4")
+parameterCode <- c("parameterCode")
+Value <- c(0.0)
+LowValue <- c(0.0)
+HighValue <- c(0.0)
+UoM <- c("UoM")
+DQS <- 1
+
+futuram_tab01_short <- data.frame(count, Scenario, Year, Location, Stock, Layer_1, Layer_2, Layer_3, Layer_4, parameterCode, Value, LowValue, HighValue, UoM, DQS)
+futuram_tab01_shortTemplate <- futuram_tab01_short
+futuram_tab01_short
+```
+
+
+# Get all the data, which are required
+
+```{r, message=FALSE, warning=FALSE}
+
+filename32_input <- "Data/32_VehicleComponentDataBase.xlsx"      # Different Keys, which are required to put together the composition data
+filename33_input <- "Data/33_VehicleComponentAdditionalInformation.xlsx"   # Additional information to complete the composition data
+filename34_input <- "Data/34_MaterialElementComponentComposition.xlsx"   # Additional information to complete the composition data
+filename35_input <- "Data/35_VehicleComponentData.xlsx"
+
+futuram_output <- "ComponentData/ELVComponent_1990_2050.xlsx"
+futuram_output_short <- "ComponentData/ELVComponent_1990_2050_short.xlsx"
+
+
+ProductKeyLevel1   <- read_excel(filename32_input, sheet = "productKeyLevel1")
+ProductKeyLevel2   <- read_excel(filename32_input, sheet = "productKeyLevel2")
+
+ComponentKeyLevel0 <- read_excel(filename32_input, sheet = "componentKeyLevel0")
+ComponentKeyLevel1 <- read_excel(filename32_input, sheet = "componentKeyLevel1")
+ComponentKeyLevel2 <- read_excel(filename32_input, sheet = "componentKeyLevel2")
+
+MaterialKeyLevel0 <- read_excel(filename32_input, sheet = "materialKeyLevel0")
+MaterialKeyLevel1 <- read_excel(filename32_input, sheet = "materialKeyLevel1")
+MaterialKeyLevel2 <- read_excel(filename32_input, sheet = "materialKeyLevel2")
+MaterialKeyLevel3 <- read_excel(filename32_input, sheet = "materialKeyLevel3")
+MaterialKeyLevel4 <- read_excel(filename32_input, sheet = "materialKeyLevel4")
+
+Compositioncatalyst <- read_excel(filename32_input, sheet = "catalyst")
+
+AdditionalInformation <- read_excel(filename33_input, sheet = "additioanlInformation")
+
+CompositionAlSiCu <- read_excel(filename34_input, sheet = "materialAlSiCucomposition")
+CompositionAlSiMg <- read_excel(filename34_input, sheet = "materialAlSiMgcomposition")
+CompositionAl_5xxx <- read_excel(filename34_input, sheet = "materialAl_5xxxcomposition")
+CompositionAl_6xxx <- read_excel(filename34_input, sheet = "materialAl_6xxxcomposition")
+CompositionAl_7xxx <- read_excel(filename34_input, sheet = "materialAl_7xxxcomposition")
+
+CompositioncastIron <- read_excel(filename34_input, sheet = "materialsFeCastIroncomposition")
+CompositionmildSteel <- read_excel(filename34_input, sheet = "materialsFeMildSteelcomposition")
+CompositionHSSteel <- read_excel(filename34_input, sheet = "materialsFeHSSteelcomposition")
+CompositionUHSSteel <- read_excel(filename34_input, sheet = "materialsFeUHSSteelcomposition")
+CompositionAHSSteel <- read_excel(filename34_input, sheet = "materialsFeAHSSteelcomposition")
+
+CompositionMgAlloys <- read_excel(filename34_input, sheet = "materialsMgAlloyscomposition")
+
+Compositionactuator <- read_excel(filename34_input, sheet = "materialsPCBsActcomposition")
+CompositioncableLike <- read_excel(filename34_input, sheet = "materialscableInscomposition")
+Compositioncontroller <- read_excel(filename34_input, sheet = "materialsPCBsContcomposition")
+Compositionlight <- read_excel(filename34_input, sheet = "materialsPCBsLightscomposition")
+CompositionpowerElectronic <- read_excel(filename34_input, sheet = "materialsPCBsPowerelcomposition")
+
+CompositionpermanentMagnet <- read_excel(filename34_input, sheet = "materialsPerMagnetcomposition")
+CompositionengineCable <- read_excel(filename34_input, sheet = "materialscableEngcomposition")
+CompositiongeneratorpermanentMagnet <- read_excel(filename34_input, sheet = "materialsGenPerMagcomposition")
+CompositiongeneratorCable <- read_excel(filename34_input, sheet = "materialscableGencomposition")
+
+```
+
+
+# Define and prepare, which data from the new data should be added to the FutuRaM template
+
+```{r, message=FALSE, warning=FALSE}
+
+emptyValue <- "N/A"     # ""
+
+vehicleNumber_Petrol <- 13 #13  # Is set during the development process - set how many cars should be put into the data template
+vehicleNumber_Diesel <- 13 #13  # Is set during the development process - set how many cars should be put into the data template
+vehicleNumber_BEV <- 13  #13  # Is set during the development process - set how many cars should be put into the data template
+vehicleNumber_HEV <- 13 #13  # Is set during the development process - set how many cars should be put into the data template
+vehicleNumber_PHEV <- 13 #13  # Is set during the development process - set how many cars should be put into the data template
+vehicleNumber_Others <- 13 #13  # Is set during the development process - set how many cars should be put into the data template
+
+# Product keys
+
+productID <- 1 # needs to be provided from VehicleCompositionDataset_1.Rmd
+
+productKeyLevel1 <- ProductKeyLevel1$productKeyLevel1     
+productKeyLevel1Index <- 1 # 1 Petrol, 2 diesel, 3 BEV, 4 HEV, 5 PHEV, 6 Others
+
+productKeyLevel2 <- ProductKeyLevel2$productKeyLevel2
+productKeyLevel2Index <- 1  # 1-13 Petrol, 14 - 26 Diesel, 27 - 39 BEV, 40 - 52 HEV, 53 - 65 PHEV, 66 - 78 Others
+
+segments <- unique(ProductKeyLevel2$segment)
+segmentsLength <- length(segments)
+
+durationYear <- c(1990, 2050)
+predictionYear <- 2026 # Change szenario and also measure to perdiction
+productionYear <- c(durationYear[1]:durationYear[2])
+yearLength <- durationYear[2] - durationYear[1] + 1
+
+componentID <- 1
+
+componentIndex <- 1    # total number (21) of components handle with this code
+materialIndex <- 1    # total number () of potential materials of a given component
+
+componentKeyLevel0 <- ComponentKeyLevel0$componentKeyLevel0
+componentKeyLevel0Index <- 1
+
+componentKeyLevel1 <- ComponentKeyLevel1$componentKeyLevel1
+componentKeyLevel1Length <- length(componentKeyLevel1)
+componentKeyLevel1Index <- 1
+
+componentKeyLevel2 <- ComponentKeyLevel2$componentKeyLevel2
+componentKeyLevel2Length <- length(componentKeyLevel2)
+componentKeyLevel2Index <- 0
+
+materialKeyLevel0 <- MaterialKeyLevel0$materialKeyLevel0
+materialKeyLevel0Length <- length(materialKeyLevel0)
+materialKeyLevel0Index <- 2
+
+materialKeyLevel1 <- MaterialKeyLevel1$materialKeyLevel1
+materialKeyLevel1Length <- length(materialKeyLevel1)
+materialKeyLevel1Index <- 2
+
+materialKeyLevel2 <- MaterialKeyLevel2$materialKeyLevel2
+materialKeyLevel2Length <- length(materialKeyLevel2)
+materialKeyLevel2Index <- 8
+
+materialKeyLevel3 <- MaterialKeyLevel3$materialKeyLevel3
+materialKeyLevel3Length <- length(materialKeyLevel3)
+materialKeyLevel3Index <- 0
+
+materialKeyLevel4 <- MaterialKeyLevel4$materialKeyLevel4
+materialKeyLevel4Length <- length(materialKeyLevel4)
+materialKeyLevel4Index <- 0
+
+cpIndex <- 0
+
+materialElement_AlSiCu <- CompositionAlSiCu %>% filter(limits == "mean")  %>% select(Element)
+materialElement_AlSiCuLength <- nrow(materialElement_AlSiCu)
+
+materialElement_AlSiMg <- CompositionAlSiMg %>% filter(limits == "mean")  %>% select(Element)
+materialElement_AlSiMgLength <- nrow(materialElement_AlSiMg)
+
+materialElement_Al_5xxx <- CompositionAl_5xxx %>% filter(limits == "mean")  %>% select(Element)
+materialElement_Al_5xxxLength <- nrow(materialElement_Al_5xxx)
+
+materialElement_Al_6xxx <- CompositionAl_6xxx %>% filter(limits == "mean")  %>% select(Element)
+materialElement_Al_6xxxLength <- nrow(materialElement_Al_6xxx)
+
+materialElement_Al_7xxx <- CompositionAl_7xxx %>% filter(limits == "mean")  %>% select(Element)
+materialElement_Al_7xxxLength <- nrow(materialElement_Al_7xxx)
+
+materialElement_castIron <- CompositioncastIron %>% filter(limits == "mean")  %>% select(Element)
+materialElement_castIronLength <- nrow(materialElement_castIron)
+
+materialElement_mildSteel <- CompositionmildSteel %>% filter(limits == "mean")  %>% select(Element)
+materialElement_mildSteelLength <- nrow(materialElement_mildSteel)
+
+materialElement_HSS <- CompositionHSSteel %>% filter(limits == "mean")  %>% select(Element)
+materialElement_HSSLength <- nrow(materialElement_HSS)
+
+materialElement_AHSS <- CompositionAHSSteel %>% filter(limits == "mean")  %>% select(Element)
+materialElement_AHSSLength <- nrow(materialElement_AHSS)
+
+materialElement_UHSS <- CompositionUHSSteel %>% filter(limits == "mean")  %>% select(Element)
+materialElement_UHSSLength <- nrow(materialElement_UHSS)
+
+materialElement_magnesium <- CompositionMgAlloys %>% filter(limits == "mean")  %>% select(Element)
+materialElement_magnesiumLength <- nrow(materialElement_magnesium)
+
+materialElement_catalyst <- Compositioncatalyst$Element
+materialElement_catalystLength <- length(materialElement_catalyst)
+
+materialElement_actuator <- Compositionactuator %>% filter(limits == "mean")  %>% select(Element)
+materialElement_actuatorLength <- nrow(materialElement_actuator)
+
+materialElement_cableLike <- CompositioncableLike %>% filter(limits == "mean")  %>% select(Element)
+materialElement_cableLikeLength <- nrow(materialElement_cableLike)
+
+materialElement_controller <- Compositioncontroller %>% filter(limits == "mean")  %>% select(Element)
+materialElement_controllerLength <- nrow(materialElement_controller)
+
+materialElement_light <- Compositionlight %>% filter(limits == "mean")  %>% select(Element)
+materialElement_lightLength <- nrow(materialElement_light)
+
+materialElement_powerElectronic <- CompositionpowerElectronic %>% filter(limits == "mean")  %>% select(Element)
+materialElement_powerElectronicLength <- nrow(materialElement_powerElectronic)
+
+materialElement_permanentMagnet <- CompositionpermanentMagnet %>% filter(limits == "mean")  %>% select(Element)
+materialElement_permanentMagnetLength <- nrow(materialElement_permanentMagnet)
+
+materialElement_engineCable <- CompositionengineCable %>% filter(limits == "mean")  %>% select(Element)
+materialElement_engineCableLength <- nrow(materialElement_engineCable)
+
+materialElement_generatorPermanentMagnet <- CompositiongeneratorpermanentMagnet %>% filter(limits == "mean")  %>% select(Element)
+materialElement_generatorPermanentMagnetLength <- nrow(materialElement_generatorPermanentMagnet)
+
+materialElement_generatorCable <- CompositiongeneratorCable %>% filter(limits == "mean")  %>% select(Element)
+materialElement_generatorCableLength <- nrow(materialElement_generatorCable)
+
+ElementIndex <- 0
+
+emptyData <- "N/A"
+
+parameterCode <- c("e-p", "e-c", "e-m", "m-p", "m-c", "c-p")
+parameterCodeIndex <- 5
+
+parameter <- c("mass", "massFraction")
+parameterIndex <- 1
+
+unitOfMeasurementValue <- c("kg/unit", "g/unit")
+unitOfMeasurementValueIndex <- 1
+
+# Create a new workbook
+wb1 <- createWorkbook()
+wb2 <- createWorkbook()
+```
+
+# Run the loop
+
+```{r, message=FALSE, warning=FALSE}
+
+for (i in 1:6) {    # ProductKeyLevel1Length
+  if(i == 1) {
+    dataUse <- read_excel(filename35_input, sheet = "componentCarPetrol")
+    component <- unique(dataUse$components)
+    componentLength <- length(component)
+    
+    
+    Materials <- read_excel(filename32_input, sheet = "materialsICE")
+    materialsLength <- length(Materials$materials) # will be different for different drivetrains
+    
+    tab_name <- "petrolCar_1990_2050"
+  }
+  else if (i == 2) {
+    dataUse <- read_excel(filename35_input, sheet = "componentCarDiesel")
+    component <- unique(dataUse$components)
+    componentLength <- length(component)
+    
+    Materials <- read_excel(filename32_input, sheet = "materialsICE")
+    materialsLength <- length(Materials$materials) # will be different for different drivetrains
+    
+    tab_name <- "dieselCar_1990_2050"
+  }
+  else if (i == 3) {
+    dataUse <- read_excel(filename35_input, sheet = "componentCarBEV")
+    component <- unique(dataUse$components)
+    componentLength <- length(component)
+    
+    Materials <- read_excel(filename32_input, sheet = "materialsBEV")
+    materialsLength <- length(Materials$materials) # will be different for different drivetrains
+    
+    tab_name <- "BEVCar_2000_2050"
+  }
+  else if (i == 4) {
+    dataUse <- read_excel(filename35_input, sheet = "componentCarHEV")
+    component <- unique(dataUse$components)
+    componentLength <- length(component)
+    
+    Materials <- read_excel(filename32_input, sheet = "materialsHEV")
+    materialsLength <- length(Materials$materials) # will be different for different drivetrains
+    
+    tab_name <- "HEVCar_2000_2050"
+  }
+  else if (i == 5) {
+    dataUse <- read_excel(filename35_input, sheet = "componentCarPHEV")
+    component <- unique(dataUse$components)
+    componentLength <- length(component)
+    
+    Materials <- read_excel(filename32_input, sheet = "materialsPHEV")
+    materialsLength <- length(Materials$materials) # will be different for different drivetrains
+    
+    tab_name <- "PHEVCar_2000_2050"
+  }
+  else if (i == 6) {
+    dataUse <- read_excel(filename35_input, sheet = "componentCarOther")
+    component <- unique(dataUse$components)
+    componentLength <- length(component)
+    
+    Materials <- read_excel(filename32_input, sheet = "materialsOther")
+    materialsLength <- length(Materials$materials) # will be different for different drivetrains
+    
+    tab_name <- "OtherCar_2000_2050"
+  }
+  
+  addWorksheet(wb1, tab_name)
+  addWorksheet(wb2, tab_name)
+  
+  startRow <- 1
+  count <- 1
+  
+  for (j in 1:segmentsLength) {   # 
+    if(i == 1 | i == 2) {
+      startyear <- 1
+    }
+    else if(i == 3 | i == 4 | i == 5 | i == 6) {
+      startyear <- 11 # BEV, HEV, PHEV, Other
+    }
+      for (k in startyear:yearLength) {
+        
+        # define component for l = 1 - elvBIW
+        componentKeyLevel0Index <- 1
+        componentKeyLevel1Index <- 1
+
+      for (l in 1:(componentLength + 2)) {
+        
+        if (l <= componentLength) {
+          
+          dataAddYear <- dataUse %>% filter(segment == segments[j] & year == productionYear[k]  & components == component[l])
+        
+          # define materials for m = 1 - Al5xxx
+          materialKeyLevel0Index <- 2
+          materialKeyLevel1Index <- 2
+          materialKeyLevel2Index <- 8
+          materialKeyLevel3Index <- 0
+          materialKeyLevel4Index <- 0
+        }
+        else if(l == componentLength + 1) {
+           
+          dataAddYear <- dataUse %>% filter(segment == segments[j] & year == productionYear[k]  & components == component[componentLength])
+          
+          parameterCodeIndex <- 6
+          
+          componentKeyLevel0Index <- 0
+          componentKeyLevel1Index <- 0
+        
+          # define materials for product
+          materialKeyLevel0Index <- 4
+          materialKeyLevel1Index <- 0
+          materialKeyLevel2Index <- 0
+          materialKeyLevel3Index <- 0
+          materialKeyLevel4Index <- 0
+         
+        }
+        else if(l == componentLength + 2) {
+           
+          dataAddYear <- dataUse %>% filter(segment == segments[j] & year == productionYear[k]  & components == component[componentLength])
+          
+          parameterCodeIndex <- 5
+          
+          componentKeyLevel0Index <- 6
+          componentKeyLevel1Index <- 0
+        
+          # define materials for rest
+          materialKeyLevel0Index <- 4
+          materialKeyLevel1Index <- 0
+          materialKeyLevel2Index <- 0
+          materialKeyLevel3Index <- 0
+          materialKeyLevel4Index <- 0
+        }
+        if (l <= componentLength) {
+          
+        for (m in 1:materialsLength) {
+          
+          if(m == 16 & (productKeyLevel1Index == 3 | productKeyLevel1Index == 6)) {
+            next
+          }
+          else if(m == 17 | m == 18 | m == 19 | m== 20) {
+            
+            # power electronics
+            materialKeyLevel0Index <- 3
+            materialKeyLevel1Index <- 11
+            materialKeyLevel2Index <- 0
+            materialKeyLevel3Index <- 0
+            materialKeyLevel4Index <- 0
+            
+            next
+          }
+          else if(dataAddYear[[as.character(Materials[m, 1])]] != 0) {   # && !any(m %in% specific_values)
+            
+            if(m == 1) {
+              elements <- materialElement_Al_5xxx$Element
+              elementLength <- materialElement_Al_5xxxLength
+            }
+            else if(m == 2) {
+              elements <- materialElement_Al_6xxx$Element
+              elementLength <- materialElement_Al_6xxxLength
+            }
+            else if(m == 3) {
+              elements <- materialElement_Al_7xxx$Element
+              elementLength <- materialElement_Al_7xxxLength
+            }
+            else if(m == 4) {
+              elements <- materialElement_AlSiCu$Element
+              elementLength <- materialElement_AlSiCuLength
+            }
+            else if(m == 5) {
+              elements <- materialElement_AlSiMg$Element
+              elementLength <- materialElement_AlSiMgLength
+            }
+              else if(m == 6 | m == 11 | m == 13) {          # stainless steel is closed to mild steel, same for alloy steel
+              elements <- materialElement_mildSteel$Element
+              elementLength <- materialElement_mildSteelLength
+            }
+            else if(m == 7) {
+              elements <- materialElement_HSS$Element
+              elementLength <- materialElement_HSSLength
+            }
+            else if(m == 8 | m == 12) {          # AHSS_DualPhase is close to AHSS
+              elements <- materialElement_AHSS$Element
+              elementLength <- materialElement_AHSSLength
+            }
+            else if(m == 9) {
+              elements <- materialElement_UHSS$Element
+              elementLength <- materialElement_UHSSLength
+            }
+            else if(m == 10 | m == 14) {
+              elements <- materialElement_castIron$Element
+              elementLength <- materialElement_castIronLength
+            }
+            else if(m == 15) {
+              elements <- materialElement_magnesium$Element
+              elementLength <- materialElement_magnesiumLength
+            }
+            else if(m == 16 & (productKeyLevel1Index == 1 | productKeyLevel1Index == 2 | productKeyLevel1Index == 4 | productKeyLevel1Index == 5 )) {
+              elements <- materialElement_catalyst     # $Element not required
+              elementLength <- materialElement_catalystLength
+            }
+            else if(m == 21) {
+              elements <- materialElement_powerElectronic$Element
+              elementLength <- materialElement_powerElectronicLength
+            }
+            else if(m == 22) {
+              elements <- materialElement_actuator$Element
+              elementLength <- materialElement_actuatorLength
+            }
+            else if(m == 23) {
+              elements <- materialElement_controller$Element
+              elementLength <- materialElement_controllerLength
+            }
+            else if(m == 24) {
+              elements <- materialElement_light$Element
+              elementLength <- materialElement_lightLength
+            }
+            else if(m == 25) {
+              elements <- materialElement_cableLike$Element
+              elementLength <- materialElement_cableLikeLength
+            }
+            else if(m == 26 & (productKeyLevel1Index == 3 | productKeyLevel1Index == 4 | productKeyLevel1Index == 5 | productKeyLevel1Index == 6)) {
+              elements <- materialElement_engineCable$Element
+              elementLength <- materialElement_engineCableLength
+            }
+            else if(m == 27 & (productKeyLevel1Index == 3 | productKeyLevel1Index == 4 | productKeyLevel1Index == 5 | productKeyLevel1Index == 6)) {
+              elements <- materialElement_permanentMagnet$Element
+              elementLength <- materialElement_permanentMagnetLength
+            }
+            else if(m == 28 & productKeyLevel1Index == 3) {
+              elements <- emptyData
+              elementLength <- 0
+            }
+            else if(m == 28 & (productKeyLevel1Index == 4 | productKeyLevel1Index == 5)) {
+              elements <- materialElement_generatorCable$Element
+              elementLength <- materialElement_generatorCableLength
+            }
+            else if(m == 29 & (productKeyLevel1Index == 4 | productKeyLevel1Index == 5)) {
+              elements <- materialElement_generatorPermanentMagnet$Element 
+              elementLength <- materialElement_generatorPermanentMagnetLength
+            }
+            else if(m == 30 & (productKeyLevel1Index == 4 | productKeyLevel1Index == 5)) {
+              elements <- emptyData
+              elementLength <- 0
+            }
+            
+            for (n in 0:elementLength) {
+              if(n == 0) {
+                parameterCodeIndex <- 5
+              }
+              else {
+                parameterCodeIndex <- 3
+              }
+              
+              data01 <- count      #dataEntryID
+              data_short00 <- data01
+  
+              data02 <- "ELV"  #relatedFutuRaM-WS
+              data03 <- "use"  #use/EoL
+              data04 <- emptyValue    #uinqueStockOrFlowName
+              data05 <- 0    #LoWchapter
+              data06 <- emptyValue   #LoWsubChapter
+              data07 <- emptyValue   #LoWkey
+              data08 <- emptyValue   #ISRI
+              data09 <- emptyValue   #HS
+              data10 <- emptyValue   #collectionCategory
+  
+              if (productionYear[k] < predictionYear) {
+                data_short01 <- "OBS"
+              }
+              else {
+                data_short01 <- "BAU/REC/CIR"
+              }
+  
+              #data11 <- NA  #productID
+              data11 <- productID
+  
+              #data12 <- "elvUnknown"   #productKeyLevel1
+              data12 <- productKeyLevel1[productKeyLevel1Index]
+  
+              #data13 <- "V01000000"    #productKeyLevel2
+              data13 <- productKeyLevel2[productKeyLevel2Index]
+              data_short05 <- productKeyLevel2[productKeyLevel2Index]
+  
+              data14 <- emptyValue      #productKeyLevel3
+              data15 <- emptyValue      #productDescriptionFromDataSource
+              data16 <- 2       #similarityBetweenProductDescriptionAndKey
+  
+              #data17 <- "1980"  #productionYear
+              data17 <- productionYear[k]
+              data_short02 <- data17
+  
+              data_short03 <- "EU27+4"
+              data_short04 <- "ELV_POM"
+    
+              data18 <- emptyValue      #yearEntryEOLphase
+  
+              #data19 <- NA      #componentID
+              data19 <- componentID
+      
+              #data20 <- ""      #componentKeyLevel0
+              if(l == 0) {
+                data20 <- emptyValue
+                data_short06 <- data20
+              }
+              else {
+                data20 <- componentKeyLevel0[componentKeyLevel0Index]
+                data_short06 <- data20   # needs likely more code
+              }
+  
+              if(componentKeyLevel1Index == 0) {
+                data21 <- emptyValue      #componentKeyLevel1
+              }
+              else if(componentKeyLevel1Index > 0) {
+                data21 <- componentKeyLevel1[componentKeyLevel1Index]      #componentKeyLevel1
+                data_short06 <- data21   # needs likely more code
+              }
+
+              if(componentKeyLevel2Index == 0) {
+                data22 <- emptyValue      #componentKeyLevel2
+              }  
+              else if(componentKeyLevel2Index > 0) {
+                data22 <- componentKeyLevel2[componentKeyLevel2Index]      #componentKeyLevel2
+              }
+    
+              data23 <- emptyValue      #componentDescriptionFromDataSource
+              data24 <- 2       #similarityBetweenComponentDescriptionAndKey
+              data25 <- emptyValue      #embeddedComponent
+  
+              #data26 <- ""      #materialKeyLevel0
+              if(materialKeyLevel0Index == 0) {
+                data26 <- emptyValue
+                data_short07 <- data26
+              }
+              else {
+                data26 <- materialKeyLevel0[materialKeyLevel0Index]
+                data_short07 <- data26
+              }
+  
+              #data27 <- ""      #materialKeyLevel1
+              if(materialKeyLevel1Index == 0) {
+                data27 <- emptyData
+              }
+              else {
+                data27 <- materialKeyLevel1[materialKeyLevel1Index]
+                data_short07 <- data27
+              }
+  
+              #data28 <- ""      #materialKeyLevel2
+              if(materialKeyLevel2Index == 0) {
+                data28 <- emptyData
+              }
+              else {
+                data28 <- materialKeyLevel2[materialKeyLevel2Index]
+                data_short07 <- data28
+              }
+  
+              #data29 <- ""      #materialKeyLevel3
+              if(materialKeyLevel3Index == 0) {
+                data29 <- emptyData
+              }
+              else {
+                data29 <- materialKeyLevel3[materialKeyLevel3Index]
+                data_short07 <- data29
+              }
+  
+              #data30 <- ""      #materialKeyLevel4
+              if(materialKeyLevel4Index == 0) {
+                data30 <- emptyData
+              }
+              else {
+                data30 <- materialKeyLevel4[materialKeyLevel4Index]
+                data_short07 <- data30
+              }
+  
+              data31 <- emptyData      #materialDescriptionFromDataSource
+              data32 <- 2       #similarityBetweenMaterialDescriptionAndKey
+  
+
+              if(n == 0) {
+                data33 <- emptyData      #element
+              }
+              else {
+                data33 <- elements[n]
+                if(data33 == "otherOrUndefinedElements_") {
+                  data33 <- "otherOrUndefinedElements"
+                }
+              }
+              data_short08 <- data33
+  
+              #data34 <- ""      #parameterCode
+              data34 <- parameterCode[parameterCodeIndex]
+              data_short09 <- data34
+  
+              data35 <- parameter[parameterIndex]
+              data36 <- "EU27+4" #sampleOriginLocationNUTS-0
+  
+              #data37 <- NA      #value
+              if(m == 1) {          # Al5xxx
+                if(n == 0) {
+                  data37 <- dataAddYear$calAl_5xxx
+                }
+                else {
+                  data37 <- dataAddYear$calAl_5xxx * filter(CompositionAl_5xxx, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 2) {     # Al6xxx
+                 if(n == 0) {
+                  data37 <- dataAddYear$calAl_6xxx
+                }
+                else {
+                  data37 <- dataAddYear$calAl_6xxx * filter(CompositionAl_6xxx, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 3) {     # Al7xxx
+                 if(n == 0) {
+                  data37 <- dataAddYear$calAl_7xxx
+                }
+                else {
+                  data37 <- dataAddYear$calAl_7xxx * filter(CompositionAl_7xxx, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 4) {     # CastAlSiCu
+                 if(n == 0) {
+                  data37 <- dataAddYear$calcastAluminiumAlSiCu
+                }
+                else {
+                  data37 <- dataAddYear$calcastAluminiumAlSiCu * filter(CompositionAlSiCu, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 5) {     # CastAlSiMg
+                 if(n == 0) {
+                  data37 <- dataAddYear$calcastAluminiumAlSiMg
+                }
+                else {
+                  data37 <- dataAddYear$calcastAluminiumAlSiMg * filter(CompositionAlSiMg, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 6) {     # mildSteel
+                 if(n == 0) {
+                  data37 <- dataAddYear$calmildSteel
+                }
+                else {
+                  data37 <- dataAddYear$calmildSteel * filter(CompositionmildSteel, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 7) {     # HSS
+                 if(n == 0) {
+                  data37 <- dataAddYear$calHSS
+                }
+                else {
+                  data37 <- dataAddYear$calHSS * filter(CompositionHSSteel, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 8) {     # AHSS
+                 if(n == 0) {
+                  data37 <- dataAddYear$calAHSS
+                }
+                else {
+                  data37 <- dataAddYear$calAHSS * filter(CompositionAHSSteel, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 9) {     # UHSS
+                 if(n == 0) {
+                  data37 <- dataAddYear$calUHSS
+                }
+                else {
+                  data37 <- dataAddYear$calUHSS * filter(CompositionUHSSteel, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 10) {     # castIron
+                 if(n == 0) {
+                  data37 <- dataAddYear$calcastIron
+                }
+                else {
+                  data37 <- dataAddYear$calcastIron * filter(CompositioncastIron, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 11) {     # stainless steel for the material composition mild steel is used
+                 if(n == 0) {
+                  data37 <- dataAddYear$calstainlessSteel
+                }
+                else {
+                  data37 <- dataAddYear$calstainlessSteel * filter(CompositionmildSteel, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 12) {     # AHSS_DualPhase for the material composition AHSS is used
+                 if(n == 0) {
+                  data37 <- dataAddYear$calAHSS_DualPhase
+                }
+                else {
+                  data37 <- dataAddYear$calAHSS_DualPhase * filter(CompositionAHSSteel, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 13) {     # alloy steel for the material composition mild steel is used
+                 if(n == 0) {
+                  data37 <- dataAddYear$calalloySteel
+                }
+                else {
+                  data37 <- dataAddYear$calalloySteel * filter(CompositionmildSteel, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 14) {     # Other iron or steel for the material composition castiron is used
+                 if(n == 0) {
+                  data37 <- dataAddYear$calOthers
+                }
+                else {
+                  data37 <- dataAddYear$calOthers * filter(CompositioncastIron, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 15) {     # Magnesium
+                 if(n == 0) {
+                  data37 <- dataAddYear$calMagnesium
+                 }
+                else {
+                  data37 <- dataAddYear$calMagnesium * filter(CompositionMgAlloys, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 16 & (productKeyLevel1Index == 1 | productKeyLevel1Index == 2 | productKeyLevel1Index == 4 | productKeyLevel1Index == 5)) {     # Catalyte
+                if(n == 0) {
+                  data37 <- dataAddYear$calculatePt + dataAddYear$calculatePd + dataAddYear$calculateRh + dataAddYear$calculateCe + dataAddYear$calculateLa
+                }
+                else if(n == 1) {
+                  data37 <- dataAddYear$calculatePt
+                }
+                else if(n == 2) {
+                  data37 <- dataAddYear$calculatePd
+                }
+                else if(n == 3) {
+                  data37 <- dataAddYear$calculateRh
+                }
+                else if(n == 4) {
+                  data37 <- dataAddYear$calculateCe
+                }
+                else if(n == 5) {
+                  data37 <- dataAddYear$calculateLa
+                }
+              }
+              else if(m == 21) {     # Powerelectronics
+                 if(n == 0) {
+                  data37 <- dataAddYear$powerElectronics
+                 }
+                else {
+                  data37 <- dataAddYear$powerElectronics * filter(CompositionpowerElectronic, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 22) {     # Actuators
+                 if(n == 0) {
+                  data37 <- dataAddYear$actuators
+                 }
+                else {
+                  data37 <- dataAddYear$actuators * filter(Compositionactuator, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 23) {     # Controllers
+                 if(n == 0) {
+                  data37 <- dataAddYear$controllers
+                 }
+                else {
+                  data37 <- dataAddYear$controllers * filter(Compositioncontroller, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 24) {     # Lights
+                 if(n == 0) {
+                  data37 <- dataAddYear$light
+                 }
+                else {
+                  data37 <- dataAddYear$light * filter(Compositionlight, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 25) {     # CableLike
+                 if(n == 0) {
+                  data37 <- dataAddYear$cableLike
+                 }
+                else {
+                  data37 <- dataAddYear$cableLike * filter(CompositioncableLike, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 26 & (productKeyLevel1Index == 3 | productKeyLevel1Index == 4 | productKeyLevel1Index == 5 | productKeyLevel1Index == 6)) {     # engineCable
+                 if(n == 0) {
+                  data37 <- dataAddYear$engineCable
+                 }
+                else {
+                  data37 <- dataAddYear$engineCable * filter(CompositionengineCable, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 27 & (productKeyLevel1Index == 3 | productKeyLevel1Index == 4 | productKeyLevel1Index == 5 | productKeyLevel1Index == 6)) {     # enginePermanentMagnets
+                 if(n == 0) {
+                  data37 <- dataAddYear$perMagnet
+                 }
+                else {
+                  data37 <- dataAddYear$perMagnet * filter(CompositionpermanentMagnet, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 28 & productKeyLevel1Index == 3) {     # Battery for BEV
+                 if(n == 0) {
+                  data37 <- dataAddYear$battery
+                 }
+              }
+              else if(m == 28 & (productKeyLevel1Index == 4 | productKeyLevel1Index == 5)) {     # generatorCable (HEV & PHEV)
+                 if(n == 0) {
+                  data37 <- dataAddYear$generatorCable
+                 }
+                else {
+                  data37 <- dataAddYear$generatorCable * filter(CompositiongeneratorCable, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 29 & (productKeyLevel1Index == 4 | productKeyLevel1Index == 5)) {     # generatorPermanentMagnets (HEV & PHEV)
+                 if(n == 0) {
+                  data37 <- dataAddYear$generatorperMagnet
+                 }
+                else {
+                  data37 <- dataAddYear$generatorperMagnet * filter(CompositiongeneratorpermanentMagnet, limits == "mean")$Content[n] / 100
+                }
+              }
+              else if(m == 30 & (productKeyLevel1Index == 4 | productKeyLevel1Index == 5)) {     # battery (HEV & PHEV)
+                 if(n == 0) {
+                  data37 <- dataAddYear$battery
+                 }
+              }
+              
+              data_short10 <- data37
+              data38 <- "mean"      #valueType
+              
+              # Get the additonla information
+              
+              additionalInformation <- AdditionalInformation %>% filter(ProductKeyLevel1 == productKeyLevel1[productKeyLevel1Index] & Alloy == Materials$materials[m])
+              
+              data39 <- data37 - data37 * additionalInformation$uncertaintyLimit      #valueLowerLimit
+              data_short11 <- data39
+  
+              data40 <- data37 + data37 * additionalInformation$uncertaintyLimit      #valueUpperLimit
+              data_short12 <- data40
+  
+              #data41 <- ""      #unitOfMeasurementValue
+              data41 <- unitOfMeasurementValue[unitOfMeasurementValueIndex]
+              data_short13 <- unitOfMeasurementValue[unitOfMeasurementValueIndex]
+  
+              if (productionYear[k] < predictionYear) {
+                data42 <- "meas"   #valueGeneration
+              }
+              else {
+                data42 <- "for"   #valueGeneration
+              }
+  
+              data43 <- emptyData      #samplingMethod
+              data44 <- emptyData      #digestionMethod
+              data45 <- emptyData      #measurementMethod
+              data46 <- emptyData      #measurementYear
+              data47 <- "EU27+4"  #measurementLocationNUTS-0
+              data48 <- "generic" #dataSetType
+  
+              #data49 <- NA       #uncertaintyFromReference
+              data49 <- data37 * additionalInformation$uncertaintyLimit / sqrt(3)
+  
+              #data50 <- ""       #unitOfMeasurementUncertainty
+              data50 <- unitOfMeasurementValue[unitOfMeasurementValueIndex]
+  
+              data51 <- data49 / data37 * 100     #uncertainty%
+              data52 <- "sd"  #uncertaintyType
+  
+              data53 <- additionalInformation$Validity   #dqValidity
+              data54 <- additionalInformation$Accuracy   #dqAccuracy
+              data55 <- additionalInformation$Consistency   #dqConsistency
+              data56 <- additionalInformation$Integrity   #dqIntegrity
+              data57 <- additionalInformation$Timeline   #dqTimeliness
+              data58 <- additionalInformation$Completeness   #dqCompleteness
+  
+              data59 <- mean(c(data53, data54, data55, data56, data57, data58, mean(c(data54, data55, data58))))  #dataQualityMean
+              #data60    #dataQuality
+              if(data59 < 1.3) {data60 <- 1}
+              else if(2.3 > data59 & data59 >= 1.3) {data60 <- 2}
+              else if(3.3 > data59 & data59 >= 2.3) {data60 <- 3}
+              else {data60 <- 4}
+              data_short14 <- data60
+  
+              data61 <- emptyData   #criticality2023
+              data62 <- emptyData   #criticality2020
+              data63 <- emptyData   #criticality2017
+              data64 <- emptyData   #criticality2014 
+              data65 <- emptyData   #criticality2011
+  
+              #   generate reference
+              for (o in 1:additionalInformation$Count) {
+                if (o == 1) {
+                  referencetext <- additionalInformation$Reference_1
+                }
+                else if(o == 2) {
+                  referencetext <- paste(referencetext, additionalInformation$Reference_2, sep = "; ") 
+                }
+                else if(o == 3) {
+                  referencetext <- paste(referencetext, additionalInformation$Reference_3, sep = "; ") 
+                }
+                else if(o == 4) {
+                  referencetext <- paste(referencetext, additionalInformation$Reference_4, sep = "; ") 
+                }
+                else if(o == 5) {
+                  referencetext <- paste(referencetext, additionalInformation$Reference_5, sep = "; ") 
+                }
+              }
+              #data66 <- "PROSum data"   #reference
+              data66 <- referencetext
+  
+              data67 <- additionalInformation$licence   #rights
+              #data68 <- ""   #notes
+              notetext1 <- paste("uncertaintyLimit <- ", additionalInformation$uncertaintyLimit, ", This means we use a", additionalInformation$uncertaintyLimit * 100, 
+                              "% rectangular distribution", collapse = " ")
+              notetext2 <- additionalInformation$note
+              data68 <- paste(notetext1, notetext2, collapse = "; ")
+  
+              data69 <- additionalInformation$URL   #referenceURL
+  
+              data70 <- "Matthias Roesslein, Manuele Cappeli, Kirsten Remme"   #dataProcessor
+              data71 <- "EMPA"
+              data72 <- format(Sys.Date(), format = "%d-%m-%Y")
+
+              new_row <- c(data01, data02, data03, data04, data05, data06, data07, data08, data09, data10,
+                            data11, data12, data13, data14, data15, data16, data17, data18, data19, data20,
+                            data21, data22, data23, data24, data25, data26, data27, data28, data29, data30,
+                            data31, data32, data33, data34, data35, data36, data37, data38, data39, data40,
+                            data41, data42, data43, data44, data45, data46, data47, data48, data49, data50,
+                            data51, data52, data53, data54, data55, data56, data57, data58, data59, data60,
+                            data61, data62, data63, data64, data65, data66, data67, data68, data69, data70,
+                            data71, data72)
+    
+              new_row_short <- c(data_short00, data_short01, data_short02, data_short03, data_short04, data_short05,
+                                  data_short06, data_short07, data_short08, data_short09, data_short10, data_short11,
+                                  data_short12, data_short13, data_short14)
+
+              futuram_tab01 <- rbind(futuram_tab01, new_row)
+              futuram_tab01_short <- rbind(futuram_tab01_short, new_row_short)
+              count <- count + 1
+            }
+          }
+          
+          # All here is done in preparation for the next step
+          
+          if(m == 1) {     # for Al6xxx (m - 2)
+            materialKeyLevel0Index <- 2
+            materialKeyLevel1Index <- 2
+            materialKeyLevel2Index <- 9
+            materialKeyLevel3Index <- 0
+            materialKeyLevel4Index <- 0
+
+          }
+          else if(m == 2) {      # for Al7xxx  (m - 3)
+            materialKeyLevel0Index <- 2
+            materialKeyLevel1Index <- 2
+            materialKeyLevel2Index <- 10
+            materialKeyLevel3Index <- 0
+            materialKeyLevel4Index <- 0
+
+          }
+          else if(m == 3) {      # for cast AlSiCu  (m - 4)
+            materialKeyLevel0Index <- 2
+            materialKeyLevel1Index <- 2
+            materialKeyLevel2Index <- 3
+            materialKeyLevel3Index <- 0
+            materialKeyLevel4Index <- 0
+
+          }
+          else if(m == 4) {      # for cast AlSiMg  (m - 5)
+            materialKeyLevel0Index <- 2
+            materialKeyLevel1Index <- 2
+            materialKeyLevel2Index <- 4
+            materialKeyLevel3Index <- 0
+            materialKeyLevel4Index <- 0
+
+          }
+          else if(m == 5) {      # for mild steel  (m - 6)
+            materialKeyLevel0Index <- 1
+            materialKeyLevel1Index <- 1
+            materialKeyLevel2Index <- 2
+            materialKeyLevel3Index <- 2
+            materialKeyLevel4Index <- 1
+          }
+          else if(m == 6) {      # for HSS  (m - 7)
+            materialKeyLevel0Index <- 1
+            materialKeyLevel1Index <- 1
+            materialKeyLevel2Index <- 2
+            materialKeyLevel3Index <- 3
+            materialKeyLevel4Index <- 2
+          }
+          else if(m == 7) {      # for AHSS  (m - 8)
+            materialKeyLevel0Index <- 1
+            materialKeyLevel1Index <- 1
+            materialKeyLevel2Index <- 2
+            materialKeyLevel3Index <- 3
+            materialKeyLevel4Index <- 3
+          }
+          else if(m == 8) {      # for UHSS  (m - 9)
+            materialKeyLevel0Index <- 1
+            materialKeyLevel1Index <- 1
+            materialKeyLevel2Index <- 2
+            materialKeyLevel3Index <- 3
+            materialKeyLevel4Index <- 4
+          }
+          else if(m == 9) {      # for castIron  (m - 10)
+            materialKeyLevel0Index <- 1
+            materialKeyLevel1Index <- 1
+            materialKeyLevel2Index <- 1
+            materialKeyLevel3Index <- 1
+            materialKeyLevel4Index <- 0
+          }
+          else if(m == 10) {      # for stainless steel (m - 11)
+            materialKeyLevel0Index <- 1
+            materialKeyLevel1Index <- 1
+            materialKeyLevel2Index <- 1
+            materialKeyLevel3Index <- 4
+            materialKeyLevel4Index <- 0
+          }
+          else if(m == 11) {      # for AHSS_DualPhase  (m - 12)
+            materialKeyLevel0Index <- 1
+            materialKeyLevel1Index <- 1
+            materialKeyLevel2Index <- 2
+            materialKeyLevel3Index <- 3
+            materialKeyLevel4Index <- 5
+          }
+          else if(m == 12) {      # alloy steel  (m - 13)
+            materialKeyLevel0Index <- 1
+            materialKeyLevel1Index <- 1
+            materialKeyLevel2Index <- 2
+            materialKeyLevel3Index <- 5
+            materialKeyLevel4Index <- 0
+          }
+          else if(m == 13) {      # other  (m - 14) 
+            materialKeyLevel0Index <- 1
+            materialKeyLevel1Index <- 1
+            materialKeyLevel2Index <- 2
+            materialKeyLevel3Index <- 6
+            materialKeyLevel4Index <- 0
+          }
+          else if(m == 14) {      # Mg alloys  (m - 15)
+            materialKeyLevel0Index <- 3
+            materialKeyLevel1Index <- 4
+            materialKeyLevel2Index <- 13
+            materialKeyLevel3Index <- 0
+            materialKeyLevel4Index <- 0
+          }
+          else if(m == 15 & (productKeyLevel1Index == 1 | productKeyLevel1Index == 2 | productKeyLevel1Index == 4 | productKeyLevel1Index == 5)) {      # catalyte alloys (m - 16)
+            materialKeyLevel0Index <- 3
+            materialKeyLevel1Index <- 7
+            materialKeyLevel2Index <- 0
+            materialKeyLevel3Index <- 0
+            materialKeyLevel4Index <- 0
+          }
+          else if(m == 21) {      # actuator  (m - 22)
+            materialKeyLevel0Index <- 3
+            materialKeyLevel1Index <- 8
+            materialKeyLevel2Index <- 0
+            materialKeyLevel3Index <- 0
+            materialKeyLevel4Index <- 0
+          }
+          else if(m == 22) {      # controler  (m - 23)
+            materialKeyLevel0Index <- 3
+            materialKeyLevel1Index <- 8
+            materialKeyLevel2Index <- 0
+            materialKeyLevel3Index <- 0
+            materialKeyLevel4Index <- 0
+          }
+          else if(m == 23) {      # light (m - 24)
+            materialKeyLevel0Index <- 3
+            materialKeyLevel1Index <- 8
+            materialKeyLevel2Index <- 0
+            materialKeyLevel3Index <- 0
+            materialKeyLevel4Index <- 0
+          }
+          else if(m == 24) {      # cableLike (m - 25)
+            materialKeyLevel0Index <- 3
+            materialKeyLevel1Index <- 3
+            materialKeyLevel2Index <- 11
+            materialKeyLevel3Index <- 0
+            materialKeyLevel4Index <- 0
+          }
+          else if(m == 25 & (productKeyLevel1Index == 3 | productKeyLevel1Index == 4 | productKeyLevel1Index == 5 | productKeyLevel1Index == 6)) {      # engineCable (m - 26)
+            materialKeyLevel0Index <- 3
+            materialKeyLevel1Index <- 3
+            materialKeyLevel2Index <- 11
+            materialKeyLevel3Index <- 0
+            materialKeyLevel4Index <- 0
+          }
+          else if(m == 26 & (productKeyLevel1Index == 3 | productKeyLevel1Index == 4 | productKeyLevel1Index == 5 | productKeyLevel1Index == 6)) {      # enginePermanentMagnets (m - 27)
+            materialKeyLevel0Index <- 3
+            materialKeyLevel1Index <- 6
+            materialKeyLevel2Index <- 12
+            materialKeyLevel3Index <- 0
+            materialKeyLevel4Index <- 0
+          }
+          else if(m == 27 & productKeyLevel1Index == 3) {      # battery (m - 28)
+            materialKeyLevel0Index <- 3
+            materialKeyLevel1Index <- 5
+            materialKeyLevel2Index <- 0
+            materialKeyLevel3Index <- 0
+            materialKeyLevel4Index <- 0
+          }
+          else if(m == 27 & (productKeyLevel1Index == 4 | productKeyLevel1Index == 5)) {      # generatorCable (m - 28)
+            materialKeyLevel0Index <- 3
+            materialKeyLevel1Index <- 3
+            materialKeyLevel2Index <- 11
+            materialKeyLevel3Index <- 0
+            materialKeyLevel4Index <- 0
+          }
+          else if(m == 28 & (productKeyLevel1Index == 4 | productKeyLevel1Index == 5)) {      # generatorPermanentMagnets (m - 29)
+            materialKeyLevel0Index <- 3
+            materialKeyLevel1Index <- 6
+            materialKeyLevel2Index <- 12
+            materialKeyLevel3Index <- 0
+            materialKeyLevel4Index <- 0
+          }
+          else if(m == 29 & (productKeyLevel1Index == 4 | productKeyLevel1Index == 5)) {      # battery (m - 30)
+            materialKeyLevel0Index <- 3
+            materialKeyLevel1Index <- 5
+            materialKeyLevel2Index <- 0
+            materialKeyLevel3Index <- 0
+            materialKeyLevel4Index <- 0
+          }
+        }
+        }
+        else if(l == (componentLength + 1) | (componentLength + 2)) {
+          
+          data01 <- count      #dataEntryID
+          data_short00 <- data01
+  
+          data02 <- "ELV"  #relatedFutuRaM-WS
+          data03 <- "use"  #use/EoL
+          data04 <- emptyValue    #uinqueStockOrFlowName
+          data05 <- 0    #LoWchapter
+          data06 <- emptyValue   #LoWsubChapter
+          data07 <- emptyValue   #LoWkey
+          data08 <- emptyValue   #ISRI
+          data09 <- emptyValue   #HS
+          data10 <- emptyValue   #collectionCategory
+  
+          if (productionYear[k] < predictionYear) {
+            data_short01 <- "OBS"
+          }
+          else {
+            data_short01 <- "BAU/REC/CIR"
+          }
+  
+          #data11 <- NA  #productID
+          data11 <- productID
+  
+          #data12 <- "elvUnknown"   #productKeyLevel1
+          data12 <- productKeyLevel1[productKeyLevel1Index]
+  
+          #data13 <- "V01000000"    #productKeyLevel2
+          data13 <- productKeyLevel2[productKeyLevel2Index]
+          data_short05 <- productKeyLevel2[productKeyLevel2Index]
+  
+          data14 <- emptyValue      #productKeyLevel3
+          data15 <- emptyValue      #productDescriptionFromDataSource
+          data16 <- 2       #similarityBetweenProductDescriptionAndKey
+  
+          #data17 <- "1980"  #productionYear
+          data17 <- productionYear[k]
+          data_short02 <- data17
+  
+          data_short03 <- "EU27+4"
+          data_short04 <- "ELV_POM"
+    
+          data18 <- emptyValue      #yearEntryEOLphase
+  
+          #data19 <- NA      #componentID
+          data19 <- componentID
+      
+          #data20 <- ""      #componentKeyLevel0
+          if(componentKeyLevel0Index == 0) {
+            data20 <- emptyValue  # product
+            data_short06 <- data20   # needs likely more code
+          }
+          else if(componentKeyLevel0Index > 0) {
+            data20 <- componentKeyLevel0[componentKeyLevel0Index]
+            data_short06 <- data20   # needs likely more code
+          }
+  
+          if(componentKeyLevel1Index == 0) {
+            data21 <- emptyValue      #componentKeyLevel1
+          }
+          else if(componentKeyLevel1Index > 0) {
+            data21 <- componentKeyLevel1[componentKeyLevel1Index]      #componentKeyLevel1
+            data_short06 <- data21   # needs likely more code
+          }
+
+          if(componentKeyLevel2Index == 0) {
+            data22 <- emptyValue      #componentKeyLevel2
+          }  
+          else if(componentKeyLevel2Index > 0) {
+            data22 <- componentKeyLevel2[componentKeyLevel2Index]      #componentKeyLevel2
+          }
+    
+          data23 <- emptyValue      #componentDescriptionFromDataSource
+          data24 <- 2       #similarityBetweenComponentDescriptionAndKey
+          data25 <- emptyValue      #embeddedComponent
+  
+          #data26 <- ""      #materialKeyLevel0
+          if(materialKeyLevel0Index == 0) {
+              data26 <- emptyValue
+              data_short07 <- data26
+          }
+          else {
+            data26 <- materialKeyLevel0[materialKeyLevel0Index]
+            data_short07 <- data26
+          }
+  
+          #data27 <- ""      #materialKeyLevel1
+          if(materialKeyLevel1Index == 0) {
+            data27 <- emptyData
+          }
+          else {
+            data27 <- materialKeyLevel1[materialKeyLevel1Index]
+            data_short07 <- data27
+          }
+  
+          #data28 <- ""      #materialKeyLevel2
+          if(materialKeyLevel2Index == 0) {
+            data28 <- emptyData
+          }
+          else {
+            data28 <- materialKeyLevel2[materialKeyLevel2Index]
+            data_short07 <- data28
+          }
+  
+          #data29 <- ""      #materialKeyLevel3
+          if(materialKeyLevel3Index == 0) {
+            data29 <- emptyData
+          }
+          else {
+            data29 <- materialKeyLevel3[materialKeyLevel3Index]
+            data_short07 <- data29
+          }
+  
+          #data30 <- ""      #materialKeyLevel4
+          if(materialKeyLevel4Index == 0) {
+            data30 <- emptyData
+          }
+          else {
+            data30 <- materialKeyLevel4[materialKeyLevel4Index]
+            data_short07 <- data30
+          }
+  
+          data31 <- emptyData      #materialDescriptionFromDataSource
+          data32 <- 2       #similarityBetweenMaterialDescriptionAndKey
+  
+          data33 <- emptyData      #element
+          data_short08 <- data33
+  
+          #data34 <- ""      #parameterCode
+          data34 <- parameterCode[parameterCodeIndex]
+          data_short09 <- data34
+  
+          data35 <- parameter[parameterIndex]
+          data36 <- "EU27+4" #sampleOriginLocationNUTS-0
+  
+          if(l == componentLength + 1) {
+            #data37 <- NA      #value
+            data37 <- dataAddYear$totalComponents
+          }
+          else if(l == componentLength + 2) {
+            #data37 <- NA      #value
+            data37 <- dataAddYear$totalRest
+          }
+          data_short10 <- data37
+          data38 <- "mean"      #valueType
+              
+          # Get the additional information
+              
+          if(l == componentLength + 1) {
+            additionalInformation <- AdditionalInformation %>% filter(ProductKeyLevel1 == productKeyLevel1[productKeyLevel1Index] & Alloy == "totalComponents")
+          }
+          else if(l == componentLength + 2) {
+            additionalInformation <- AdditionalInformation %>% filter(ProductKeyLevel1 == productKeyLevel1[productKeyLevel1Index] & Alloy == "totalRest")
+          }
+              
+          data39 <- data37 - data37 * additionalInformation$uncertaintyLimit      #valueLowerLimit
+          data_short11 <- data39
+  
+          data40 <- data37 + data37 * additionalInformation$uncertaintyLimit      #valueUpperLimit
+          data_short12 <- data40
+  
+          #data41 <- ""      #unitOfMeasurementValue
+          data41 <- unitOfMeasurementValue[unitOfMeasurementValueIndex]
+          data_short13 <- unitOfMeasurementValue[unitOfMeasurementValueIndex]
+  
+          if (productionYear[k] < predictionYear) {
+            data42 <- "meas"   #valueGeneration
+          }
+          else {
+            data42 <- "for"   #valueGeneration
+          }
+  
+          data43 <- emptyData      #samplingMethod
+          data44 <- emptyData      #digestionMethod
+          data45 <- emptyData      #measurementMethod
+          data46 <- emptyData      #measurementYear
+          data47 <- "EU27+4"  #measurementLocationNUTS-0
+          data48 <- "generic" #dataSetType
+  
+          #data49 <- NA       #uncertaintyFromReference
+          data49 <- data37 * additionalInformation$uncertaintyLimit / sqrt(3)
+  
+          #data50 <- ""       #unitOfMeasurementUncertainty
+          data50 <- unitOfMeasurementValue[unitOfMeasurementValueIndex]
+  
+          data51 <- data49 / data37 * 100     #uncertainty%
+          data52 <- "sd"  #uncertaintyType
+  
+          data53 <- additionalInformation$Validity   #dqValidity
+          data54 <- additionalInformation$Accuracy   #dqAccuracy
+          data55 <- additionalInformation$Consistency   #dqConsistency
+          data56 <- additionalInformation$Integrity   #dqIntegrity
+          data57 <- additionalInformation$Timeline   #dqTimeliness
+          data58 <- additionalInformation$Completeness   #dqCompleteness
+  
+          data59 <- mean(c(data53, data54, data55, data56, data57, data58, mean(c(data54, data55, data58))))  #dataQualityMean
+          #data60    #dataQuality
+          if(data59 < 1.3) {data60 <- 1}
+          else if(2.3 > data59 & data59 >= 1.3) {data60 <- 2}
+          else if(3.3 > data59 & data59 >= 2.3) {data60 <- 3}
+          else {data60 <- 4}
+          data_short14 <- data60
+  
+          data61 <- emptyData   #criticality2023
+          data62 <- emptyData   #criticality2020
+          data63 <- emptyData   #criticality2017
+          data64 <- emptyData   #criticality2014 
+          data65 <- emptyData   #criticality2011
+  
+          #   generate reference
+          for (o in 1:additionalInformation$Count) {
+            if (o == 1) {
+              referencetext <- additionalInformation$Reference_1
+            }
+            else if(o == 2) {
+              referencetext <- paste(referencetext, additionalInformation$Reference_2, sep = "; ") 
+            }
+            else if(o == 3) {
+              referencetext <- paste(referencetext, additionalInformation$Reference_3, sep = "; ") 
+            }
+            else if(o == 4) {
+              referencetext <- paste(referencetext, additionalInformation$Reference_4, sep = "; ") 
+            }
+            else if(o == 5) {
+              referencetext <- paste(referencetext, additionalInformation$Reference_5, sep = "; ") 
+            }
+          }
+          #data66 <- "PROSum data"   #reference
+          data66 <- referencetext
+  
+          data67 <- additionalInformation$licence   #rights
+          #data68 <- ""   #notes
+          notetext1 <- paste("uncertaintyLimit <- ", additionalInformation$uncertaintyLimit, ", This means we use a", additionalInformation$uncertaintyLimit * 100, 
+                              "% rectangular distribution", collapse = " ")
+          notetext2 <- additionalInformation$note
+          data68 <- paste(notetext1, notetext2, collapse = "; ")
+  
+          data69 <- additionalInformation$URL   #referenceURL
+  
+          data70 <- "Matthias Roesslein, Manuele Cappeli, Kirsten Remme"   #dataProcessor
+          data71 <- "EMPA"
+          data72 <- format(Sys.Date(), format = "%d-%m-%Y")
+
+          new_row <- c(data01, data02, data03, data04, data05, data06, data07, data08, data09, data10,
+                        data11, data12, data13, data14, data15, data16, data17, data18, data19, data20,
+                        data21, data22, data23, data24, data25, data26, data27, data28, data29, data30,
+                        data31, data32, data33, data34, data35, data36, data37, data38, data39, data40,
+                        data41, data42, data43, data44, data45, data46, data47, data48, data49, data50,
+                        data51, data52, data53, data54, data55, data56, data57, data58, data59, data60,
+                        data61, data62, data63, data64, data65, data66, data67, data68, data69, data70,
+                        data71, data72)
+    
+          new_row_short <- c(data_short00, data_short01, data_short02, data_short03, data_short04, data_short05,
+                              data_short06, data_short07, data_short08, data_short09, data_short10, data_short11,
+                              data_short12, data_short13, data_short14)
+
+          futuram_tab01 <- rbind(futuram_tab01, new_row)
+          futuram_tab01_short <- rbind(futuram_tab01_short, new_row_short)
+          count <- count + 1
+          #print(m)
+        }
+        if (l == 1) {   # elvBrakes
+          componentKeyLevel0Index <- 1
+          componentKeyLevel1Index <- 2
+        }
+        else if(l == 2) {    # elvChassis
+          componentKeyLevel0Index <- 1
+          componentKeyLevel1Index <- 3
+        }
+        else if(l == 3) {    # elvClosures
+          componentKeyLevel0Index <- 1
+          componentKeyLevel1Index <- 4
+        }
+        else if(l == 4) {     # elvDriveline
+          componentKeyLevel0Index <- 1
+          componentKeyLevel1Index <- 5
+        }
+        else if(l == 5) {     # elvPowertrain
+          componentKeyLevel0Index <- 1
+          componentKeyLevel1Index <- 6
+        }
+        else if(l == 6) {     # elvSteering
+          componentKeyLevel0Index <- 1
+          componentKeyLevel1Index <- 7
+        }
+        else if(l == 7) {     # elvThermalManagement
+          componentKeyLevel0Index <- 1
+          componentKeyLevel1Index <- 8
+        }
+        else if(l == 8) {     # elvTransmission
+          componentKeyLevel0Index <- 1
+          componentKeyLevel1Index <- 9
+        }
+        else if(l == 9) {     # elvTrim
+          componentKeyLevel0Index <- 1
+          componentKeyLevel1Index <- 10
+        }
+        else if(l == 10) {     # elvWheels
+          componentKeyLevel0Index <- 1
+          componentKeyLevel1Index <- 11
+        }
+        else if(l == 11 & (productKeyLevel1Index == 1 | productKeyLevel1Index == 2 | productKeyLevel1Index == 4 | productKeyLevel1Index == 5)) {     # elvCatalyticConverters
+          componentKeyLevel0Index <- 4
+          componentKeyLevel1Index <- 20
+        }
+        else if(l == 11 & (productKeyLevel1Index == 3 | productKeyLevel1Index == 6)) {     # elvPowerElectronics
+          componentKeyLevel0Index <- 3
+          componentKeyLevel1Index <- 18
+        }
+        else if(l == 12 & (productKeyLevel1Index == 1 | productKeyLevel1Index == 2 | productKeyLevel1Index == 4 | productKeyLevel1Index == 5)) {     # elvPowerElectronics
+          componentKeyLevel0Index <- 3
+          componentKeyLevel1Index <- 18
+        }
+        else if(l == 12 & (productKeyLevel1Index == 3 | productKeyLevel1Index == 6)) {     # elvEmbeddedElectronicsActuators
+          componentKeyLevel0Index <- 3
+          componentKeyLevel1Index <- 14
+        }
+        else if(l == 13 & (productKeyLevel1Index == 1 | productKeyLevel1Index == 2 | productKeyLevel1Index == 4 | productKeyLevel1Index == 5)) {     # elvEmbeddedElectronicsActuators
+          componentKeyLevel0Index <- 3
+          componentKeyLevel1Index <- 14
+        }
+        else if(l == 13 & (productKeyLevel1Index == 3 | productKeyLevel1Index == 6)) {     # elvEmbeddedElectronicsControllers
+          componentKeyLevel0Index <- 3
+          componentKeyLevel1Index <- 16
+        }
+        else if(l == 14 & (productKeyLevel1Index == 1 | productKeyLevel1Index == 2 | productKeyLevel1Index == 4 | productKeyLevel1Index == 5)) {     # elvEmbeddedElectronicsControllers
+          componentKeyLevel0Index <- 3
+          componentKeyLevel1Index <- 16
+        }
+        else if(l == 14 & (productKeyLevel1Index == 3 | productKeyLevel1Index == 6)) {     # elvEmbeddedElectronicsHeadlights
+          componentKeyLevel0Index <- 3
+          componentKeyLevel1Index <- 17
+        }
+        else if(l == 15 & (productKeyLevel1Index == 1 | productKeyLevel1Index == 2 | productKeyLevel1Index == 4 | productKeyLevel1Index == 5)) {     # elvEmbeddedElectronicsHeadlights
+          componentKeyLevel0Index <- 3
+          componentKeyLevel1Index <- 17
+        }
+        else if(l == 15 & (productKeyLevel1Index == 3 | productKeyLevel1Index == 6)) {     # elvEmbeddedElectronicsCables
+          componentKeyLevel0Index <- 3
+          componentKeyLevel1Index <- 15
+        }
+        else if(l == 16 & (productKeyLevel1Index == 1 | productKeyLevel1Index == 2 | productKeyLevel1Index == 4 | productKeyLevel1Index == 5)) {     # elvEmbeddedElectronicsCables
+          componentKeyLevel0Index <- 3
+          componentKeyLevel1Index <- 15
+        }
+        else if(l == 16 & (productKeyLevel1Index == 3 | productKeyLevel1Index == 6)) {     # elvElectricMotorCable
+          componentKeyLevel0Index <- 2
+          componentKeyLevel1Index <- 13
+        }
+        else if(l == 17 & (productKeyLevel1Index == 3 | productKeyLevel1Index == 6)) {    # elvElectricMotorPermanentMagnets
+          componentKeyLevel0Index <- 2
+          componentKeyLevel1Index <- 13
+        }
+        else if(l == 17 & (productKeyLevel1Index == 4 | productKeyLevel1Index == 5)) {    # elvElectricMotorCable
+          componentKeyLevel0Index <- 2
+          componentKeyLevel1Index <- 13
+        }
+        else if(l == 18 & (productKeyLevel1Index == 3)) {     # elvBattery
+          componentKeyLevel0Index <- 2
+          componentKeyLevel1Index <- 23
+        }
+        else if(l == 18 & (productKeyLevel1Index == 4 | productKeyLevel1Index == 5)) {      # elvElectricMotorPermanentMagnets
+          componentKeyLevel0Index <- 3
+          componentKeyLevel1Index <- 13
+        }
+        else if(l == 19 & (productKeyLevel1Index == 4 | productKeyLevel1Index == 5)) {     # elvGeneratorCable
+          componentKeyLevel0Index <- 2
+          componentKeyLevel1Index <- 24
+        }
+        else if(l == 20 & (productKeyLevel1Index == 4 | productKeyLevel1Index == 5)) {     # elvGeneratorPermanentMagnets
+          componentKeyLevel0Index <- 2
+          componentKeyLevel1Index <- 24
+        }
+        else if(l == 22 & (productKeyLevel1Index == 4 | productKeyLevel1Index == 5)) {     # elvBattery
+          componentKeyLevel0Index <- 2
+          componentKeyLevel1Index <- 23
+        }
+       #print(l)
+      }
+      print(k)
+      if(((k == 10 & startRow == 1) & (productKeyLevel1Index == 1 | productKeyLevel1Index == 2)) | ((k == 20 & startRow == 1) & (productKeyLevel1Index == 3 | productKeyLevel1Index == 4 | productKeyLevel1Index == 5  | productKeyLevel1Index == 6))) {
+    
+        # Remove the first row
+        futuram_tab01 <- futuram_tab01[-1, ]
+        futuram_tab01_short <- futuram_tab01_short[-1, ]
+
+        writeData(wb1, tab_name, futuram_tab01, startRow = startRow, startCol = 1, colNames = TRUE)
+        writeData(wb2, tab_name, futuram_tab01_short, startRow = startRow, startCol = 1, colNames = TRUE)
+      }
+
+      else if (k == 10 | k == 20 | k == 30 | k == 40 | k == 50) {
+     
+        # Remove the first row
+        futuram_tab01 <- futuram_tab01[-1, ]
+        futuram_tab01_short <- futuram_tab01_short[-1, ]
+
+        writeData(wb1, tab_name, futuram_tab01, startRow = startRow, startCol = 1, colNames = FALSE)
+        writeData(wb2, tab_name, futuram_tab01_short, startRow = startRow, startCol = 1, colNames = FALSE)
+      } 
+      if (k == 10 | k == 20 | k == 30 | k == 40 | k == 50) {
+        saveWorkbook(wb1, futuram_output, overwrite = TRUE)
+        saveWorkbook(wb2, futuram_output_short, overwrite = TRUE)
+
+        startRow <- data01 + 2
+  
+        # delete all rows of the two data.frames
+        futuram_tab01 <- futuram_tab01Template
+        futuram_tab01_short <- futuram_tab01_shortTemplate
+      }
+
+    }
+    
+    # Remove the first row
+    futuram_tab01 <- futuram_tab01[-1, ]
+    futuram_tab01_short <- futuram_tab01_short[-1, ]
+
+    writeData(wb1, tab_name, futuram_tab01, startRow = startRow, startCol = 1, colNames = FALSE)
+    writeData(wb2, tab_name, futuram_tab01_short, startRow = startRow, startCol = 1, colNames = FALSE)
+        
+    saveWorkbook(wb1, futuram_output, overwrite = TRUE)
+    saveWorkbook(wb2, futuram_output_short, overwrite = TRUE)
+
+    startRow <- data01 + 2
+  
+    # delete all rows of the two data.frames
+    futuram_tab01 <- futuram_tab01Template
+    futuram_tab01_short <- futuram_tab01_shortTemplate
+
+    productKeyLevel2Index <- productKeyLevel2Index + 1    # Next product key
+    print(productKeyLevel2Index)
+  }
+  productKeyLevel1Index <- productKeyLevel1Index + 1    # Next product key
+}
+
+
+```

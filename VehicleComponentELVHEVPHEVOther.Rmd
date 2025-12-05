@@ -1,0 +1,561 @@
+---
+title: "Generate new data for vehicle component composition based on different studies"
+author: "Matthias Roesslein - Empa"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+tags: [FutuRaM, Empa, vehicles, car, van, Al, Fe]
+abstract: |
+  Calculate for given data the standard composition of vehicle component and their different car segments (a, b, c etc.). It is first done for aluminium alloys (Al), iron/steel alloys (Fe)
+
+version: 3.0.0
+output:
+  pdf_document:
+    latex_engine: xelatex
+header-includes:
+  - \geometry{landscape, margin=1in}  # Setzt das gesamte Dokument auf Landscape
+  - \usepackage{fontspec}
+  - \setmainfont{Arial}  # Optional: Setzt die Schriftart auf Arial
+  - \setmonofont{Courier New}
+  - \renewcommand{\familydefault}{\sfdefault}  # Optional: Setzt serifenlose Schriftart als Standard
+  - \usepackage{fancyvrb}
+  - \fvset{fontfamily=Courier, fontsize=\footnotesize}  # Setzt Monospace-Schriftart für den Code
+---
+
+**Copyright notice:** Copyright © 2023 - 2025 Empa, Matthias Roesslein
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+## Loading of the libraries
+
+We are using tidyverse framework to rearrange and analysis the data. 
+
+```{r, message=FALSE, warning=FALSE}
+# load libraries
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(stringr)
+library(ggplot2)
+library(scales)
+library(forcats)
+
+library(readxl) # read excel files
+library("openxlsx")   #The openxlsx package is highly customizable and allows you to: Write multiple data frames to different sheets of the same Excel file. Customize formatting, such as column widths, bold headers, and colors.
+```
+
+```{r, message=FALSE, warning=FALSE}
+tidyverse_conflicts()
+```
+
+
+## Define the files names of the input excel file
+
+```{r, message=FALSE, warning=FALSE}
+
+filename2_input <- "Data/2_VehicleCompositionNewData.xlsx"
+filename5_input <- "Data/5_VehicleComponentCompositionNewData.xlsx"
+
+filename21_input <- "Data/21_CompositionData.xlsx"
+
+```
+
+## Define the file name of the output excel file
+
+```{r, message=FALSE, warning=FALSE}
+
+filename23_output <- "Data/23_CompositionDataUpdated.xlsx"
+
+```
+
+## Load all the sheets of the the component family composotion (% total weigt & % material composition)
+
+```{r, message=FALSE, warning=FALSE}
+
+vehicleWeight <- read_excel(filename2_input, sheet = "totalWeight")
+productKeys <- read_excel(filename2_input, sheet = "ProductKeys")
+
+vPetrol_componentfamiliy_composition <- read_excel(filename5_input, sheet = "vPertol")
+vDiesel_componentfamiliy_composition <- read_excel(filename5_input, sheet = "vDiesel")
+vBEV_componentfamiliy_composition <- read_excel(filename5_input, sheet = "vBEV")
+vHEV_componentfamiliy_composition <- read_excel(filename5_input, sheet = "vHEV")
+vPHEV_componentfamiliy_composition <- read_excel(filename5_input, sheet = "vPHEV")
+vOther_componentfamiliy_composition <- read_excel(filename5_input, sheet = "vOther")
+
+vPetrol_Powertrain_composition <- read_excel(filename5_input, sheet = "vPetrolPowertrain")
+vDiesel_Powertrain_composition <- read_excel(filename5_input, sheet = "vDieselPowertrain")
+vBEV_Powertrain_composition <- read_excel(filename5_input, sheet = "vBEVPowertrain")
+vHEV_Powertrain_composition <- read_excel(filename5_input, sheet = "vHEVPowertrain")
+vPHEV_Powertrain_composition <- read_excel(filename5_input, sheet = "vPHEVPowertrain")
+vOther_Powertrain_composition <- read_excel(filename5_input, sheet = "vOtherPowertrain")
+
+vGeneratorRatio <- read_excel(filename5_input, sheet = "vGenerator")    # HEV & PHEV
+
+vBEV_Electronics_composition <- read_excel(filename5_input, sheet = "vBEVElectronic")
+vHEV_Electronics_composition <- read_excel(filename5_input, sheet = "vHEVElectronic")
+vPHEV_Electronics_composition <- read_excel(filename5_input, sheet = "vPHEVElectronic")
+vOther_Electronics_composition <- read_excel(filename5_input, sheet = "vOtherElectronic")
+
+vBattery <- read_excel(filename5_input, sheet = "vBattery")
+
+vFuelcell <- read_excel(filename5_input, sheet = "vFuelcell")
+
+```
+
+## Load all the compostion of the petrol car segments (in kg)
+
+```{r, message=FALSE, warning=FALSE}
+
+calculate <- read_excel(filename21_input, sheet = "FutuRaM-ELV")
+#calculate
+
+```
+
+
+## Calculate the mass and material composition of a pertrol car powertrain
+
+```{r, message=FALSE, warning=FALSE}
+
+vPowertrain <- vPetrol_componentfamiliy_composition %>% select(c(productKeyLevel2, vPowertrain))
+vPetrol_Powertrain <- left_join(vPetrol_Powertrain_composition, vPowertrain, by = "productKeyLevel2")
+vPetrol_Powertrain_ratio <- vPetrol_Powertrain %>% mutate(across(-productKeyLevel2, ~ . *  vPowertrain)) %>% select(-vPowertrain)
+
+# Add the segment column and get ride of productKeyLevel1 and productKeyLevel2 - It allows to add the dataset to the calculate dataset
+vPetrol_Powertrain_ratio <- vPetrol_Powertrain_ratio %>% left_join(productKeys, by = "productKeyLevel2" ) %>% select(-c(productKeyLevel1, productKeyLevel2))
+
+# Prepare for the calculations by adding the powertrain ratios using the segments as key
+calculate <- calculate %>% left_join(vPetrol_Powertrain_ratio, by = "segment")
+
+# Performing the calculation for the BEV, HEV, PHEV and Other
+calculate <- calculate %>%
+                mutate(
+                  castingAlCalculate = ifelse(productKeyLevel1 %in% c("elvBEV", "elvHEV", "elvPHEV", "elvOther"), castingAlCalculate - (castingAl * castingAlCalculate), castingAlCalculate),
+                  extrusionAlCalculate = ifelse(productKeyLevel1 %in% c("elvBEV", "elvHEV", "elvPHEV", "elvOther"), extrusionAlCalculate - (extrusionAl * extrusionAlCalculate), extrusionAlCalculate),
+                  forgingAlCalculate = ifelse(productKeyLevel1 %in% c("elvBEV", "elvHEV", "elvPHEV", "elvOther"), forgingAlCalculate - (forgingAl * forgingAlCalculate), forgingAlCalculate),
+                  sheetAlCalculate = ifelse(productKeyLevel1 %in% c("elvBEV", "elvHEV", "elvPHEV", "elvOther"), sheetAlCalculate - (sheetAl * sheetAlCalculate), sheetAlCalculate),
+                  totalAlCalculate = ifelse(productKeyLevel1 %in% c("elvBEV", "elvHEV", "elvPHEV", "elvOther"), castingAlCalculate + extrusionAlCalculate + forgingAlCalculate + sheetAlCalculate, totalAlCalculate),
+                  castIronCalculate = ifelse(productKeyLevel1 %in% c("elvBEV", "elvHEV", "elvPHEV", "elvOther"), castIronCalculate - (castIron * castIronCalculate), castIronCalculate),
+                  mildSteelCalculate = ifelse(productKeyLevel1 %in% c("elvBEV", "elvHEV", "elvPHEV", "elvOther"), mildSteelCalculate - (mildSteel * mildSteelCalculate), mildSteelCalculate),
+                  HSSCalculate = ifelse(productKeyLevel1 %in% c("elvBEV", "elvHEV", "elvPHEV", "elvOther"), HSSCalculate - (HSS * HSSCalculate), HSSCalculate),
+                  AHSSCalculate = ifelse(productKeyLevel1 %in% c("elvBEV", "elvHEV", "elvPHEV", "elvOther"), AHSSCalculate - (AHSS * AHSSCalculate), AHSSCalculate),
+                  UHSSCalculate = ifelse(productKeyLevel1 %in% c("elvBEV", "elvHEV", "elvPHEV", "elvOther"), UHSSCalculate - (UHSS * UHSSCalculate), UHSSCalculate),
+                  totalIronSteelCalculate = ifelse(productKeyLevel1 %in% c("elvBEV", "elvHEV", "elvPHEV", "elvOther"), castIronCalculate + mildSteelCalculate + HSSCalculate + AHSSCalculate + UHSSCalculate, totalIronSteelCalculate),
+                  totalMetals = ifelse(productKeyLevel1 %in% c("elvBEV", "elvHEV", "elvPHEV", "elvOther"), totalAlCalculate + totalIronSteelCalculate + EED_total, totalMetals),
+                  total = ifelse(productKeyLevel1 %in% c("elvBEV", "elvHEV", "elvPHEV", "elvOther"), totalMetals + totalOtherMaterilas, total)
+                )
+
+# Remove the additional columns
+calculate <- calculate %>% select(-c(castingAl, extrusionAl, forgingAl, sheetAl, castIron, mildSteel, HSS, AHSS, UHSS, Total))
+#calculate
+
+```
+
+### BEV
+
+## Calcualate the mass and material composition of a BEV powertrain, electronics & dummy battery
+
+```{r, message=FALSE, warning=FALSE}
+#
+# Powertrain  --------
+vPowertrain <- vBEV_componentfamiliy_composition %>% select(c(productKeyLevel2, vPowertrain))
+vBEV_Powertrain <- left_join(vBEV_Powertrain_composition, vPowertrain, by = "productKeyLevel2") %>% select(-Total)
+vBEV_Powertrain_ratio <- vBEV_Powertrain %>% mutate(across(-productKeyLevel2, ~ . *  vPowertrain)) %>% select(-vPowertrain)
+
+# Add the segment column and get ride of productKeyLevel1 and productKeyLevel2 - It allows to add the dataset to the calculate dataset
+vBEV_Powertrain_ratio <- vBEV_Powertrain_ratio %>% left_join(productKeys, by = "productKeyLevel2" ) %>% select(-c(productKeyLevel1, productKeyLevel2))
+
+## Calculate the weight of the cooper cables in the electric motors and the weight of the permanent magnets
+vBEV_Powertrain_ratio <- vBEV_Powertrain_ratio %>% left_join(vehicleWeight %>% select(segment, elvBEV), by = "segment" )
+vBEV_Powertrain_ratio <- vBEV_Powertrain_ratio %>% mutate(engineCableBEV = engineCableBEV * elvBEV, perMagnetBEV = perMagnetBEV * elvBEV) %>% select(-c(elvBEV))
+
+# Prepare for the calculations by adding the powertrain ratios using the segments as key
+calculate <- calculate %>% left_join(vBEV_Powertrain_ratio, by = "segment")
+
+# Performing the calculation for the BEV, HEV, PHEV and Other
+calculate <- calculate %>%
+                mutate(
+                  castingAlCalculate = ifelse(productKeyLevel1 %in% c("elvBEV"), castingAlCalculate - (castingAl * castingAlCalculate), castingAlCalculate),
+                  extrusionAlCalculate = ifelse(productKeyLevel1 %in% c("elvBEV"), extrusionAlCalculate - (extrusionAl * extrusionAlCalculate), extrusionAlCalculate),
+                  forgingAlCalculate = ifelse(productKeyLevel1 %in% c("elvBEV"), forgingAlCalculate - (forgingAl * forgingAlCalculate), forgingAlCalculate),
+                  sheetAlCalculate = ifelse(productKeyLevel1 %in% c("elvBEV"), sheetAlCalculate - (sheetAl * sheetAlCalculate), sheetAlCalculate),
+                  totalAlCalculate = ifelse(productKeyLevel1 %in% c("elvBEV"), castingAlCalculate + extrusionAlCalculate + forgingAlCalculate + sheetAlCalculate, totalAlCalculate),
+                  castIronCalculate = ifelse(productKeyLevel1 %in% c("elvBEV"), castIronCalculate - (castIron * castIronCalculate), castIronCalculate),
+                  mildSteelCalculate = ifelse(productKeyLevel1 %in% c("elvBEV"), mildSteelCalculate - (mildSteel * mildSteelCalculate), mildSteelCalculate),
+                  HSSCalculate = ifelse(productKeyLevel1 %in% c("elvBEV"), HSSCalculate - (HSS * HSSCalculate), HSSCalculate),
+                  AHSSCalculate = ifelse(productKeyLevel1 %in% c("elvBEV"), AHSSCalculate - (AHSS * AHSSCalculate), AHSSCalculate),
+                  UHSSCalculate = ifelse(productKeyLevel1 %in% c("elvBEV"), UHSSCalculate - (UHSS * UHSSCalculate), UHSSCalculate),
+                  totalIronSteelCalculate = ifelse(productKeyLevel1 %in% c("elvBEV"), castIronCalculate + mildSteelCalculate + HSSCalculate + AHSSCalculate + UHSSCalculate, totalIronSteelCalculate),
+                  engineCable = ifelse(productKeyLevel1 %in% c("elvBEV"), engineCableBEV, 0),
+                  perMagnet = ifelse(productKeyLevel1 %in% c("elvBEV"), perMagnetBEV, 0),
+                  totalMetals = ifelse(productKeyLevel1 %in% c("elvBEV"), totalAlCalculate + totalIronSteelCalculate + EED_total + engineCable + perMagnet, totalMetals),
+                  total = ifelse(productKeyLevel1 %in% c("elvBEV"), totalMetals + totalOtherMaterilas, total)
+                )
+
+# Remove the additional columns
+calculate <- calculate %>% select(-c(castingAl, extrusionAl, forgingAl, sheetAl, castIron, mildSteel, HSS, AHSS, UHSS, engineCableBEV, perMagnetBEV))
+#calculate
+
+#
+# Electronics ------
+vElectronics <- vBEV_componentfamiliy_composition %>% select(c(productKeyLevel2, vElectronics))
+vBEV_Electronics <- inner_join(vBEV_Electronics_composition, vElectronics, by = "productKeyLevel2")
+vBEV_Electronics_ratio <- vBEV_Electronics %>% mutate(across(-productKeyLevel2, ~ . *  vElectronics)) %>% select(-vElectronics)
+
+# Add the segment column and get ride of productKeyLevel1 and productKeyLevel2 - It allows to add the dataset to the calculate dataset
+vBEV_Electronics_ratio <- vBEV_Electronics_ratio %>% left_join(productKeys, by = "productKeyLevel2" ) %>% select(-c(productKeyLevel1, productKeyLevel2))
+
+# Prepare for the calculations by adding the powertrain ratios using the segments as key
+calculate <- calculate %>% left_join(vBEV_Electronics_ratio, by = "segment")
+
+# Performing the calculation for the BEV, HEV, PHEV and Other
+calculate <- calculate %>%
+                mutate(
+                  actuators = ifelse(productKeyLevel1 %in% c("elvBEV"), actuators - (actuatorUpdate * actuators), actuators),
+                  controllers = ifelse(productKeyLevel1 %in% c("elvBEV"), controllers - (controllerUpdate * controllers), controllers),
+                  light = ifelse(productKeyLevel1 %in% c("elvBEV"), light - (lightUpdate * light), light),
+                  cableLike = ifelse(productKeyLevel1 %in% c("elvBEV"), cableLike - (cableLikeUpdate * cableLike), cableLike),
+                  powerElectronics = ifelse(productKeyLevel1 %in% c("elvBEV"), powerElectronics - (powerElectronicUpdate * powerElectronics), powerElectronics),
+                  EED_total = ifelse(productKeyLevel1 %in% c("elvBEV"), actuators + controllers + light + cableLike + powerElectronics, EED_total),
+                  totalMetals = ifelse(productKeyLevel1 %in% c("elvBEV"), totalAlCalculate + totalIronSteelCalculate + EED_total, totalMetals),
+                  total = ifelse(productKeyLevel1 %in% c("elvBEV"), totalMetals + totalOtherMaterilas, total)
+                )
+
+# Remove the additional columns
+calculate <- calculate %>% select(-c(actuatorUpdate, controllerUpdate, lightUpdate, cableLikeUpdate, powerElectronicUpdate))
+#calculate
+
+#
+# Battery dummy weight
+
+# join battery weight
+calculate <- calculate %>% left_join(vBattery, by = "segment")
+
+calculate <- calculate %>%
+                mutate(
+                  battery = ifelse(productKeyLevel1 %in% c("elvBEV"), vBatteryBEV, 0),
+                  total = ifelse(productKeyLevel1 %in% c("elvBEV"), totalMetals + totalOtherMaterilas + battery, total)
+                )
+
+# Remove the additional columns
+calculate <- calculate %>% select(-c(vBatteryBEV, vBatteryHEV, vBatteryPHEV, vBatteryOther))
+#calculate
+```
+
+## HEV (V040101XXXX)
+
+## Calcualate the mass and material composition of a HEV powertrain, electronics & dummy battery
+
+```{r, message=FALSE, warning=FALSE}
+#
+# Powertrain  --------
+vPowertrain <- vHEV_componentfamiliy_composition %>% select(c(productKeyLevel2, vPowertrain))
+vHEV_Powertrain <- left_join(vHEV_Powertrain_composition, vPowertrain, by = "productKeyLevel2") %>% select(-Total)
+vHEV_Powertrain_ratio <- vHEV_Powertrain %>% mutate(across(-productKeyLevel2, ~ . *  vPowertrain)) %>% select(-vPowertrain)
+
+# Add the segment column and get ride of productKeyLevel1 and productKeyLevel2 - It allows to add the dataset to the calculate dataset
+vHEV_Powertrain_ratio <- vHEV_Powertrain_ratio %>% left_join(productKeys, by = "productKeyLevel2" ) %>% select(-c(productKeyLevel1, productKeyLevel2))
+
+# Split the permanent magnets and cooper to the electric engine and the altenator (generator), which also starts the petrol engine
+generatorRatio <- vGeneratorRatio %>% filter(drivetrain == "HEV")
+
+## Calculate the weight of the cooper cables in the electric motors and the weight of the permanent magnets
+vHEV_Powertrain_ratio <- vHEV_Powertrain_ratio %>% left_join(vehicleWeight %>% select(segment, elvHEV), by = "segment" )
+vHEV_Powertrain_ratio <- vHEV_Powertrain_ratio %>% mutate(engineCableHEV = engineCableHEV * elvHEV * (1 - generatorRatio$ratio),
+                                                          perMagnetHEV = perMagnetHEV * elvHEV * (1 - generatorRatio$ratio),
+                                                          generatorCableHEV = engineCableHEV / (1 - generatorRatio$ratio) * generatorRatio$ratio,
+                                                          generatorPerMagnetHEV = perMagnetHEV / (1 - generatorRatio$ratio) * generatorRatio$ratio) %>% select(-c(elvHEV))
+
+# Prepare for the calculations by adding the powertrain ratios using the segments as key
+calculate <- calculate %>% left_join(vHEV_Powertrain_ratio, by = "segment")
+
+calculate <- calculate %>% mutate(
+    generatorCable = ifelse(productKeyLevel1 == "elvHEV" | productKeyLevel1 == "elvPHEV", 1, 0),
+    generatorperMagnet = ifelse(productKeyLevel1 == "elvHEV" | productKeyLevel1 == "elvPHEV", 1, 0)
+  )
+
+
+# Performing the calculation for the BEV, HEV, PHEV and Other
+calculate <- calculate %>%
+                mutate(
+                  castingAlCalculate = ifelse(productKeyLevel1 %in% c("elvHEV"), castingAlCalculate - (castingAl * castingAlCalculate), castingAlCalculate),
+                  extrusionAlCalculate = ifelse(productKeyLevel1 %in% c("elvHEV"), extrusionAlCalculate - (extrusionAl * extrusionAlCalculate), extrusionAlCalculate),
+                  forgingAlCalculate = ifelse(productKeyLevel1 %in% c("elvHEV"), forgingAlCalculate - (forgingAl * forgingAlCalculate), forgingAlCalculate),
+                  sheetAlCalculate = ifelse(productKeyLevel1 %in% c("elvHEV"), sheetAlCalculate - (sheetAl * sheetAlCalculate), sheetAlCalculate),
+                  totalAlCalculate = ifelse(productKeyLevel1 %in% c("elvHEV"), castingAlCalculate + extrusionAlCalculate + forgingAlCalculate + sheetAlCalculate, totalAlCalculate),
+                  castIronCalculate = ifelse(productKeyLevel1 %in% c("elvHEV"), castIronCalculate - (castIron * castIronCalculate), castIronCalculate),
+                  mildSteelCalculate = ifelse(productKeyLevel1 %in% c("elvHEV"), mildSteelCalculate - (mildSteel * mildSteelCalculate), mildSteelCalculate),
+                  HSSCalculate = ifelse(productKeyLevel1 %in% c("elvHEV"), HSSCalculate - (HSS * HSSCalculate), HSSCalculate),
+                  AHSSCalculate = ifelse(productKeyLevel1 %in% c("elvHEV"), AHSSCalculate - (AHSS * AHSSCalculate), AHSSCalculate),
+                  UHSSCalculate = ifelse(productKeyLevel1 %in% c("elvHEV"), UHSSCalculate - (UHSS * UHSSCalculate), UHSSCalculate),
+                  totalIronSteelCalculate = ifelse(productKeyLevel1 %in% c("elvHEV"), castIronCalculate + mildSteelCalculate + HSSCalculate + AHSSCalculate + UHSSCalculate, totalIronSteelCalculate),
+                  engineCable = ifelse(productKeyLevel1 %in% c("elvHEV"), engineCableHEV, ifelse(engineCable > 0, engineCable, 0)),
+                  perMagnet = ifelse(productKeyLevel1 %in% c("elvHEV"), perMagnetHEV,  ifelse(perMagnet > 0, perMagnet, 0)),
+                  generatorCable = ifelse(productKeyLevel1 %in% c("elvHEV"), generatorCableHEV, ifelse(generatorCable > 0, generatorCable, 0)),
+                  generatorperMagnet = ifelse(productKeyLevel1 %in% c("elvHEV"), generatorPerMagnetHEV,  ifelse(generatorperMagnet > 0, generatorperMagnet, 0)),
+                  totalMetals = ifelse(productKeyLevel1 %in% c("elvHEV"), totalAlCalculate + totalIronSteelCalculate + EED_total + engineCable + perMagnet + generatorCable + generatorperMagnet, totalMetals),
+                  total = ifelse(productKeyLevel1 %in% c("elvHEV"), totalMetals + totalOtherMaterilas, total)
+                )
+
+# Remove the additional columns
+calculate <- calculate %>% select(-c(castingAl, extrusionAl, forgingAl, sheetAl, castIron, mildSteel, HSS, AHSS, UHSS, engineCableHEV, perMagnetHEV, generatorCableHEV, generatorPerMagnetHEV))
+#calculate
+
+#
+# Electronics ------
+vElectronics <- vHEV_componentfamiliy_composition %>% select(c(productKeyLevel2, vElectronics))
+vHEV_Electronics <- inner_join(vHEV_Electronics_composition, vElectronics, by = "productKeyLevel2")
+vHEV_Electronics_ratio <- vHEV_Electronics %>% mutate(across(-productKeyLevel2, ~ . *  vElectronics)) %>% select(-vElectronics)
+
+# Add the segment column and get ride of productKeyLevel1 and productKeyLevel2 - It allows to add the dataset to the calculate dataset
+vHEV_Electronics_ratio <- vHEV_Electronics_ratio %>% left_join(productKeys, by = "productKeyLevel2" ) %>% select(-c(productKeyLevel1, productKeyLevel2))
+
+# Prepare for the calculations by adding the powertrain ratios using the segments as key
+calculate <- calculate %>% left_join(vHEV_Electronics_ratio, by = "segment")
+
+# Performing the calculation for the BEV, HEV, PHEV and Other
+calculate <- calculate %>%
+                mutate(
+                  actuators = ifelse(productKeyLevel1 %in% c("elvHEV"), actuators - (actuatorUpdate * actuators), actuators),
+                  controllers = ifelse(productKeyLevel1 %in% c("elvHEV"), controllers - (controllerUpdate * controllers), controllers),
+                  light = ifelse(productKeyLevel1 %in% c("elvHEV"), light - (lightUpdate * light), light),
+                  cableLike = ifelse(productKeyLevel1 %in% c("elvHEV"), cableLike - (cableLikeUpdate * cableLike), cableLike),
+                  powerElectronics = ifelse(productKeyLevel1 %in% c("elvHEV"), powerElectronics - (powerElectronicUpdate * powerElectronics), powerElectronics),
+                  EED_total = ifelse(productKeyLevel1 %in% c("elvHEV"), actuators + controllers + light + cableLike + powerElectronics, EED_total),
+                  totalMetals = ifelse(productKeyLevel1 %in% c("elvHEV"), totalAlCalculate + totalIronSteelCalculate + EED_total + engineCable + perMagnet + generatorCable + generatorperMagnet, totalMetals),
+                  total = ifelse(productKeyLevel1 %in% c("elvHEV"), totalMetals + totalOtherMaterilas, total)
+                )
+
+# Remove the additional columns
+calculate <- calculate %>% select(-c(actuatorUpdate, controllerUpdate, lightUpdate, cableLikeUpdate, powerElectronicUpdate))
+#calculate
+
+#
+# Battery dummy weight
+
+# join battery weight
+calculate <- calculate %>% left_join(vBattery, by = "segment")
+
+calculate <- calculate %>%
+                mutate(
+                  battery = ifelse(productKeyLevel1 %in% c("elvHEV"), vBatteryHEV, ifelse(battery > 0, battery, 0)),
+                  total = ifelse(productKeyLevel1 %in% c("elvHEV"), totalMetals + totalOtherMaterilas + battery, total)
+                )
+
+# Remove the additional columns
+calculate <- calculate %>% select(-c(vBatteryBEV, vBatteryHEV, vBatteryPHEV, vBatteryOther))
+calculate
+```
+
+
+## PHEV (V050103XXXX)
+
+## Calcualate the mass and material composition of a HEV powertrain, electronics & dummy battery
+
+```{r, message=FALSE, warning=FALSE}
+#
+# Powertrain  --------
+vPowertrain <- vPHEV_componentfamiliy_composition %>% select(c(productKeyLevel2, vPowertrain))
+vPHEV_Powertrain <- left_join(vPHEV_Powertrain_composition, vPowertrain, by = "productKeyLevel2") %>% select(-Total)
+vPHEV_Powertrain_ratio <- vPHEV_Powertrain %>% mutate(across(-productKeyLevel2, ~ . *  vPowertrain)) %>% select(-vPowertrain)
+
+# Add the segment column and get ride of productKeyLevel1 and productKeyLevel2 - It allows to add the dataset to the calculate dataset
+vPHEV_Powertrain_ratio <- vPHEV_Powertrain_ratio %>% left_join(productKeys, by = "productKeyLevel2" ) %>% select(-c(productKeyLevel1, productKeyLevel2))
+
+# Split the permanent magnets and cooper to the electric engine and the altenator (generator), which also starts the petrol engine
+generatorRatio <- vGeneratorRatio %>% filter(drivetrain == "PHEV")
+
+## Calculate the weight of the cooper cables in the electric motors and the weight of the permanent magnets
+vPHEV_Powertrain_ratio <- vPHEV_Powertrain_ratio %>% left_join(vehicleWeight %>% select(segment, elvPHEV), by = "segment" )
+vPHEV_Powertrain_ratio <- vPHEV_Powertrain_ratio %>% mutate(engineCablePHEV = engineCablePHEV * elvPHEV * (1 - generatorRatio$ratio),
+                                                          perMagnetPHEV = perMagnetPHEV * elvPHEV * (1 - generatorRatio$ratio),
+                                                          generatorCablePHEV = engineCablePHEV / (1 - generatorRatio$ratio) * generatorRatio$ratio,
+                                                          generatorPerMagnetPHEV = perMagnetPHEV / (1 - generatorRatio$ratio) * generatorRatio$ratio) %>% select(-c(elvPHEV))
+
+# Prepare for the calculations by adding the powertrain ratios using the segments as key
+calculate <- calculate %>% left_join(vPHEV_Powertrain_ratio, by = "segment")
+
+# Performing the calculation for the BEV, HEV, PHEV and Other
+calculate <- calculate %>%
+                mutate(
+                  castingAlCalculate = ifelse(productKeyLevel1 %in% c("elvPHEV"), castingAlCalculate - (castingAl * castingAlCalculate), castingAlCalculate),
+                  extrusionAlCalculate = ifelse(productKeyLevel1 %in% c("elvPHEV"), extrusionAlCalculate - (extrusionAl * extrusionAlCalculate), extrusionAlCalculate),
+                  forgingAlCalculate = ifelse(productKeyLevel1 %in% c("elvPHEV"), forgingAlCalculate - (forgingAl * forgingAlCalculate), forgingAlCalculate),
+                  sheetAlCalculate = ifelse(productKeyLevel1 %in% c("elvPHEV"), sheetAlCalculate - (sheetAl * sheetAlCalculate), sheetAlCalculate),
+                  totalAlCalculate = ifelse(productKeyLevel1 %in% c("elvPHEV"), castingAlCalculate + extrusionAlCalculate + forgingAlCalculate + sheetAlCalculate, totalAlCalculate),
+                  castIronCalculate = ifelse(productKeyLevel1 %in% c("elvPHEV"), castIronCalculate - (castIron * castIronCalculate), castIronCalculate),
+                  mildSteelCalculate = ifelse(productKeyLevel1 %in% c("elvPHEV"), mildSteelCalculate - (mildSteel * mildSteelCalculate), mildSteelCalculate),
+                  HSSCalculate = ifelse(productKeyLevel1 %in% c("elvPHEV"), HSSCalculate - (HSS * HSSCalculate), HSSCalculate),
+                  AHSSCalculate = ifelse(productKeyLevel1 %in% c("elvPHEV"), AHSSCalculate - (AHSS * AHSSCalculate), AHSSCalculate),
+                  UHSSCalculate = ifelse(productKeyLevel1 %in% c("elvPHEV"), UHSSCalculate - (UHSS * UHSSCalculate), UHSSCalculate),
+                  totalIronSteelCalculate = ifelse(productKeyLevel1 %in% c("elvPHEV"), castIronCalculate + mildSteelCalculate + HSSCalculate + AHSSCalculate + UHSSCalculate, totalIronSteelCalculate),
+                  engineCable = ifelse(productKeyLevel1 %in% c("elvPHEV"), engineCablePHEV, ifelse(engineCable > 0, engineCable, 0)),
+                  perMagnet = ifelse(productKeyLevel1 %in% c("elvPHEV"), perMagnetPHEV,  ifelse(perMagnet > 0, perMagnet, 0)),
+                  generatorCable = ifelse(productKeyLevel1 %in% c("elvPHEV"), generatorCablePHEV, ifelse(generatorCable > 0, generatorCable, 0)),
+                  generatorperMagnet = ifelse(productKeyLevel1 %in% c("elvPHEV"), generatorPerMagnetPHEV,  ifelse(generatorperMagnet > 0, generatorperMagnet, 0)),
+                  totalMetals = ifelse(productKeyLevel1 %in% c("elvPHEV"), totalAlCalculate + totalIronSteelCalculate + EED_total + engineCable + perMagnet + generatorCable + generatorperMagnet, totalMetals),
+                  total = ifelse(productKeyLevel1 %in% c("elvPHEV"), totalMetals + totalOtherMaterilas, total)
+                )
+
+# Remove the additional columns
+calculate <- calculate %>% select(-c(castingAl, extrusionAl, forgingAl, sheetAl, castIron, mildSteel, HSS, AHSS, UHSS, engineCablePHEV, perMagnetPHEV, generatorCablePHEV, generatorPerMagnetPHEV))
+#calculate
+
+#
+# Electronics ------
+vElectronics <- vPHEV_componentfamiliy_composition %>% select(c(productKeyLevel2, vElectronics))
+vPHEV_Electronics <- inner_join(vPHEV_Electronics_composition, vElectronics, by = "productKeyLevel2")
+vPHEV_Electronics_ratio <- vPHEV_Electronics %>% mutate(across(-productKeyLevel2, ~ . *  vElectronics)) %>% select(-vElectronics)
+
+# Add the segment column and get ride of productKeyLevel1 and productKeyLevel2 - It allows to add the dataset to the calculate dataset
+vPHEV_Electronics_ratio <- vPHEV_Electronics_ratio %>% left_join(productKeys, by = "productKeyLevel2" ) %>% select(-c(productKeyLevel1, productKeyLevel2))
+
+# Prepare for the calculations by adding the powertrain ratios using the segments as key
+calculate <- calculate %>% left_join(vPHEV_Electronics_ratio, by = "segment")
+
+# Performing the calculation for the BEV, HEV, PHEV and Other
+calculate <- calculate %>%
+                mutate(
+                  actuators = ifelse(productKeyLevel1 %in% c("elvPHEV"), actuators - (actuatorUpdate * actuators), actuators),
+                  controllers = ifelse(productKeyLevel1 %in% c("elvPHEV"), controllers - (controllerUpdate * controllers), controllers),
+                  light = ifelse(productKeyLevel1 %in% c("elvPHEV"), light - (lightUpdate * light), light),
+                  cableLike = ifelse(productKeyLevel1 %in% c("elvPHEV"), cableLike - (cableLikeUpdate * cableLike), cableLike),
+                  powerElectronics = ifelse(productKeyLevel1 %in% c("elvPHEV"), powerElectronics - (powerElectronicUpdate * powerElectronics), powerElectronics),
+                  EED_total = ifelse(productKeyLevel1 %in% c("elvPHEV"), actuators + controllers + light + cableLike + powerElectronics, EED_total),
+                  totalMetals = ifelse(productKeyLevel1 %in% c("elvPHEV"), totalAlCalculate + totalIronSteelCalculate + EED_total + engineCable + perMagnet + generatorCable + generatorperMagnet, totalMetals),
+                  total = ifelse(productKeyLevel1 %in% c("elvPHEV"), totalMetals + totalOtherMaterilas, total)
+                )
+
+# Remove the additional columns
+calculate <- calculate %>% select(-c(actuatorUpdate, controllerUpdate, lightUpdate, cableLikeUpdate, powerElectronicUpdate))
+#calculate
+
+#
+# Battery dummy weight
+
+# join battery weight
+calculate <- calculate %>% left_join(vBattery, by = "segment")
+
+calculate <- calculate %>%
+                mutate(
+                  battery = ifelse(productKeyLevel1 %in% c("elvPHEV"), vBatteryPHEV, ifelse(battery > 0, battery, 0)),
+                  total = ifelse(productKeyLevel1 %in% c("elvPHEV"), totalMetals + totalOtherMaterilas + battery, total)
+                )
+
+# Remove the additional columns
+calculate <- calculate %>% select(-c(vBatteryBEV, vBatteryHEV, vBatteryPHEV, vBatteryOther))
+calculate
+
+```
+
+
+## Other (V060104XXXX)
+
+## Calcualate the mass and material composition of an Other powertrain, electronics & dummy battery
+
+```{r, message=FALSE, warning=FALSE}
+#
+# Powertrain  --------
+vPowertrain <- vOther_componentfamiliy_composition %>% select(c(productKeyLevel2, vPowertrain))
+vOther_Powertrain <- left_join(vOther_Powertrain_composition, vPowertrain, by = "productKeyLevel2") %>% select(-Total)
+vOther_Powertrain_ratio <- vOther_Powertrain %>% mutate(across(-productKeyLevel2, ~ . *  vPowertrain)) %>% select(-vPowertrain)
+
+# Add the segment column and get ride of productKeyLevel1 and productKeyLevel2 - It allows to add the dataset to the calculate dataset
+vOther_Powertrain_ratio <- vOther_Powertrain_ratio %>% left_join(productKeys, by = "productKeyLevel2" ) %>% select(-c(productKeyLevel1, productKeyLevel2))
+
+## Calculate the weight of the cooper cables in the electric motors and the weight of the permanent magnets
+vOther_Powertrain_ratio <- vOther_Powertrain_ratio %>% left_join(vehicleWeight %>% select(segment, elvOther), by = "segment" )
+vOther_Powertrain_ratio <- vOther_Powertrain_ratio %>% mutate(engineCableOther = engineCableOther * elvOther, perMagnetOther = perMagnetOther * elvOther) %>% select(-c(elvOther))
+
+# Prepare for the calculations by adding the powertrain ratios using the segments as key
+calculate <- calculate %>% left_join(vOther_Powertrain_ratio, by = "segment")
+
+# Performing the calculation for the BEV, HEV, PHEV and Other
+calculate <- calculate %>%
+                mutate(
+                  castingAlCalculate = ifelse(productKeyLevel1 %in% c("elvOther"), castingAlCalculate - (castingAl * castingAlCalculate), castingAlCalculate),
+                  extrusionAlCalculate = ifelse(productKeyLevel1 %in% c("elvOther"), extrusionAlCalculate - (extrusionAl * extrusionAlCalculate), extrusionAlCalculate),
+                  forgingAlCalculate = ifelse(productKeyLevel1 %in% c("elvOther"), forgingAlCalculate - (forgingAl * forgingAlCalculate), forgingAlCalculate),
+                  sheetAlCalculate = ifelse(productKeyLevel1 %in% c("elvOther"), sheetAlCalculate - (sheetAl * sheetAlCalculate), sheetAlCalculate),
+                  totalAlCalculate = ifelse(productKeyLevel1 %in% c("elvOther"), castingAlCalculate + extrusionAlCalculate + forgingAlCalculate + sheetAlCalculate, totalAlCalculate),
+                  castIronCalculate = ifelse(productKeyLevel1 %in% c("elvOther"), castIronCalculate - (castIron * castIronCalculate), castIronCalculate),
+                  mildSteelCalculate = ifelse(productKeyLevel1 %in% c("elvOther"), mildSteelCalculate - (mildSteel * mildSteelCalculate), mildSteelCalculate),
+                  HSSCalculate = ifelse(productKeyLevel1 %in% c("elvOther"), HSSCalculate - (HSS * HSSCalculate), HSSCalculate),
+                  AHSSCalculate = ifelse(productKeyLevel1 %in% c("elvOther"), AHSSCalculate - (AHSS * AHSSCalculate), AHSSCalculate),
+                  UHSSCalculate = ifelse(productKeyLevel1 %in% c("elvOther"), UHSSCalculate - (UHSS * UHSSCalculate), UHSSCalculate),
+                  totalIronSteelCalculate = ifelse(productKeyLevel1 %in% c("elvOther"), castIronCalculate + mildSteelCalculate + HSSCalculate + AHSSCalculate + UHSSCalculate, totalIronSteelCalculate),
+                  engineCable = ifelse(productKeyLevel1 %in% c("elvOther"), engineCableOther, ifelse(engineCable > 0, engineCable, 0)),
+                  perMagnet = ifelse(productKeyLevel1 %in% c("elvOther"), perMagnetOther,  ifelse(perMagnet > 0, perMagnet, 0)),
+                  totalMetals = ifelse(productKeyLevel1 %in% c("elvOther"), totalAlCalculate + totalIronSteelCalculate + EED_total + engineCable + perMagnet, totalMetals),
+                  total = ifelse(productKeyLevel1 %in% c("elvOther"), totalMetals + totalOtherMaterilas, total)
+                )
+
+# Remove the additional columns
+calculate <- calculate %>% select(-c(castingAl, extrusionAl, forgingAl, sheetAl, castIron, mildSteel, HSS, AHSS, UHSS, engineCableOther, perMagnetOther))
+#calculate
+
+#
+# Electronics ------
+vElectronics <- vOther_componentfamiliy_composition %>% select(c(productKeyLevel2, vElectronics))
+vOther_Electronics <- inner_join(vOther_Electronics_composition, vElectronics, by = "productKeyLevel2")
+vOther_Electronics_ratio <- vOther_Electronics %>% mutate(across(-productKeyLevel2, ~ . *  vElectronics)) %>% select(-vElectronics)
+
+# Add the segment column and get ride of productKeyLevel1 and productKeyLevel2 - It allows to add the dataset to the calculate dataset
+vOther_Electronics_ratio <- vOther_Electronics_ratio %>% left_join(productKeys, by = "productKeyLevel2" ) %>% select(-c(productKeyLevel1, productKeyLevel2))
+
+# Prepare for the calculations by adding the powertrain ratios using the segments as key
+calculate <- calculate %>% left_join(vOther_Electronics_ratio, by = "segment")
+
+# Performing the calculation for the BEV, HEV, PHEV and Other
+calculate <- calculate %>%
+                mutate(
+                  actuators = ifelse(productKeyLevel1 %in% c("elvOther"), actuators - (actuatorUpdate * actuators), actuators),
+                  controllers = ifelse(productKeyLevel1 %in% c("elvOther"), controllers - (controllerUpdate * controllers), controllers),
+                  light = ifelse(productKeyLevel1 %in% c("elvOther"), light - (lightUpdate * light), light),
+                  cableLike = ifelse(productKeyLevel1 %in% c("elvOther"), cableLike - (cableLikeUpdate * cableLike), cableLike),
+                  powerElectronics = ifelse(productKeyLevel1 %in% c("elvOther"), powerElectronics - (powerElectronicUpdate * powerElectronics), powerElectronics),
+                  EED_total = ifelse(productKeyLevel1 %in% c("elvOther"), actuators + controllers + light + cableLike + powerElectronics, EED_total),
+                  totalMetals = ifelse(productKeyLevel1 %in% c("elvOther"), totalAlCalculate + totalIronSteelCalculate + EED_total, totalMetals),
+                  total = ifelse(productKeyLevel1 %in% c("elvOther"), totalMetals + totalOtherMaterilas, total)
+                )
+
+# Remove the additional columns
+calculate <- calculate %>% select(-c(actuatorUpdate, controllerUpdate, lightUpdate, cableLikeUpdate, powerElectronicUpdate))
+
+#
+# Fuelcell
+
+# join battery weight
+calculate <- calculate %>% left_join(vBattery, by = "segment")
+
+calculate <- calculate %>%
+                mutate(
+                  battery = ifelse(productKeyLevel1 %in% c("elvOther"), vBatteryOther, ifelse(battery > 0, battery, 0)),
+                  total = ifelse(productKeyLevel1 %in% c("elvOther"), totalMetals + totalOtherMaterilas + battery, total)
+                 # PtFuelcell = ifelse(productKeyLevel1 %in% c("elvOther"), PtFuelcellOther, 0),
+                 # GraphiteFuelcell = ifelse(productKeyLevel1 %in% c("elvOther"), GraphiteFuelcellOther, 0),
+                 # total = ifelse(productKeyLevel1 %in% c("elvOther"), totalMetals + totalOtherMaterilas + PtFuelcell + GraphiteFuelcell, total)
+                )
+
+# Remove the additional columns
+#calculate <- calculate %>% select(-c(PtFuelcellOther, GraphiteFuelcellOther))
+calculate <- calculate %>% select(-c(vBatteryBEV, vBatteryHEV, vBatteryPHEV, vBatteryOther))
+#calculate
+
+```
+
+## Writes the updated dataset to filename23_outputs
+
+```{r, message=FALSE, warning=FALSE}
+## write to excel sheet using perl
+
+# Create a new workbook and add the data
+wb <- createWorkbook()
+addWorksheet(wb, "FutuRaM-ELV")
+writeData(wb, "FutuRaM-ELV", calculate)
+
+# Save the workbook to an Excel file
+saveWorkbook(wb, filename23_output, overwrite = TRUE)
+
+```
