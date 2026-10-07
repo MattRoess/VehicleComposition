@@ -14,6 +14,9 @@ Until 2026-10-07 this repository was dedicated to the public domain under CC0 1.
 copy taken before then stays under CC0; the change applies from the commit that made it.
 
 **Data of other institutions.** The workbooks in `Data/` were put together for this repository
-from data published by other institutions, for example the JRC data in `Data/DataJRC/`. The licence
-covers the compilation, not the data it was built from: that stays under the terms of the
-institutions that published it, so check those terms before you reuse a number.
+from data published by other institutions. The licence covers the compilation, not the data it was
+built from: that stays under the terms of the institutions that published it, so check those terms
+before you reuse a number.
+
+`Data/DataJRC/` is not of that kind: it holds the vehicle composition data produced by this project,
+and it is published on the JRC website.
