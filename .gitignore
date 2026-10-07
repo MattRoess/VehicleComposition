@@ -1,0 +1,2 @@
+# macOS Finder metadata: it changes whenever a folder is opened and never belongs in git.
+.DS_Store
