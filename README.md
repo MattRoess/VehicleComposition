@@ -13,8 +13,7 @@ Empa, Matthias Roesslein.
 Until 2026-10-07 this repository was dedicated to the public domain under CC0 1.0 Universal. A
 copy taken before then stays under CC0; the change applies from the commit that made it.
 
-**Not covered by it:** the third-party material kept in `Data/` -- the JRC workbooks
-(`Data/DataJRC/` and `Data/1_JRCData_1980_2010.xlsx`), the VDA components workbook
-`Data/VDACarCompontents.xlsx`, the alloys report `VehicleAlloysData.pdf` and the FutuRaM WP3
-template `Data/230831_template_product-centric_WP3_version5_ELV_Ready.xlsx`. They stay under their
-owners' terms.
+**Data of other institutions.** The workbooks in `Data/` were put together for this repository
+from data published by other institutions, for example the JRC data in `Data/DataJRC/`. The licence
+covers the compilation, not the data it was built from: that stays under the terms of the
+institutions that published it, so check those terms before you reuse a number.
